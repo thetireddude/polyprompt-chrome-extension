@@ -13,32 +13,17 @@
         <p>Capture events from your current tab.</p>
       </header>
 
-      <!-- Section 1: API Key Settings -->
-      <section class="section">
-        <h2>OpenAI API Key</h2>
-        <div class="row">
-          <input
-            id="apiKeyInput"
-            type="password"
-            placeholder="sk-..."
-            autocomplete="off"
-          />
-          <button id="saveKeyBtn">Save Key</button>
-        </div>
-        <div id="keyStatus" class="status-muted">Key not saved</div>
-      </section>
-
-      <!-- Section 2: Capture Button -->
+      <!-- Section 1: Capture Button -->
       <section class="section">
         <button id="captureBtn" class="primary">Capture Event</button>
       </section>
 
-      <!-- Section 3: Status Area -->
+      <!-- Section 2: Status Area -->
       <section class="section">
         <div id="status" class="status">Idle</div>
       </section>
 
-      <!-- Section 4: Event Form (shown only when detected) -->
+      <!-- Section 3: Event Form (shown only when detected) -->
       <section id="eventSection" class="section hidden">
         <h2>Detected Event</h2>
         <div class="form">
@@ -81,7 +66,7 @@
         </div>
       </section>
 
-      <!-- Section 5: Saved Events List -->
+      <!-- Section 4: Saved Events List -->
       <section class="section">
         <h2>Saved Events</h2>
         <div id="eventsList" class="list"></div>

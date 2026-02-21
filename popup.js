@@ -1,15 +1,10 @@
 ﻿/*
   EventSnap Popup Script
-  - Handles API key storage
   - Triggers capture via background service worker
   - Renders editable event form
   - Saves events to chrome.storage.local
   - Exports ICS files client-side
 */
-
-const apiKeyInput = document.getElementById("apiKeyInput");
-const saveKeyBtn = document.getElementById("saveKeyBtn");
-const keyStatus = document.getElementById("keyStatus");
 
 const captureBtn = document.getElementById("captureBtn");
 const statusEl = document.getElementById("status");
@@ -36,24 +31,9 @@ let currentEvent = null;
 init();
 
 async function init() {
-  // Load saved API key status and saved events on startup.
-  const { openai_api_key } = await chrome.storage.local.get("openai_api_key");
-  updateKeyStatus(!!openai_api_key);
-
   const { events } = await chrome.storage.local.get("events");
   renderEventsList(events || []);
 }
-
-saveKeyBtn.addEventListener("click", async () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    updateStatus("Please enter a key.");
-    return;
-  }
-  await chrome.storage.local.set({ openai_api_key: key });
-  apiKeyInput.value = "";
-  updateKeyStatus(true);
-});
 
 captureBtn.addEventListener("click", async () => {
   updateStatus("Capturing...");
@@ -121,10 +101,6 @@ exportIcsBtn.addEventListener("click", () => {
   if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
   exportICS(eventData, "event");
 });
-
-function updateKeyStatus(saved) {
-  keyStatus.textContent = saved ? "Key saved" : "Key not saved";
-}
 
 function updateStatus(text) {
   statusEl.textContent = text;
