@@ -1,0 +1,56 @@
+EventSnap – Minimum Viable Product (MVP)
+AI-Powered Event Capture Chrome Extension
+
+Overview:
+The MVP of EventSnap is a Chrome Extension that lets users capture a screenshot of the visible tab on-demand and use the OpenAI Responses API to detect and extract structured event details. The MVP validates that users find value in converting event content (Instagram posts, flyers, websites) into structured, calendar-ready entries in seconds.
+
+Core Objective:
+Enable users to capture, review, and save event details in under 10 seconds with minimal friction.
+
+MVP Scope:
+
+1) On-Demand Screenshot Capture
+- User opens the extension popup.
+- User clicks “Capture Event”.
+- Extension captures visible tab using `chrome.tabs.captureVisibleTab` (JPEG).
+- Convert screenshot to base64 for upload to the OpenAI API.
+
+2) OpenAI Vision Extraction (Responses API)
+- Extension sends screenshot to OpenAI Responses API.
+- The model returns:
+  - is_event: true/false
+  - event object with these fields only:
+    - title
+    - start_datetime (ISO or null)
+    - end_datetime (ISO or null)
+    - timezone (default America/Los_Angeles if missing)
+    - location (string or null)
+    - host (string or null)
+    - registration_link (string or null)
+    - cost (string or null)
+- If no event is detected, display “No event detected.”
+
+3) Popup UI (Review + Edit)
+- Show a status indicator (capturing/sending/done/error).
+- If event detected, show an editable form populated with returned fields.
+- Buttons:
+  - Save Event
+  - Export ICS
+
+4) Local Storage
+- Save events into `chrome.storage.local` under key “events”.
+- Each event includes: id, created_at, and the event fields.
+- No screenshot storage by default.
+
+5) ICS Export
+- Generate an ICS file client-side and trigger a download.
+- Include DTSTART/DTEND, SUMMARY, LOCATION, DESCRIPTION.
+
+Out of Scope (MVP):
+- Automatic scanning while scrolling
+- Continuous monitoring
+- Multi-device sync
+- Social / group planning features
+- Direct Google Calendar API integration (ICS export is sufficient)
+
+End of Document
