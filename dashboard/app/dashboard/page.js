@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionGuard } from "@/lib/useSessionGuard";
+import ThemeToggle from "./theme-toggle";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CALENDAR_VIEWS = ["month", "week", "day"];
@@ -35,6 +36,19 @@ function startOfMonth(value) {
   return date;
 }
 
+function endOfMonth(value) {
+  const date = startOfMonth(value);
+  date.setMonth(date.getMonth() + 1);
+  date.setDate(0);
+  return date;
+}
+
+function endOfWeek(value) {
+  const date = startOfDay(value);
+  date.setDate(date.getDate() + (6 - date.getDay()));
+  return date;
+}
+
 function addDays(value, days) {
   const next = new Date(value);
   next.setDate(next.getDate() + days);
@@ -56,17 +70,21 @@ function formatTime(value) {
   }).format(value);
 }
 
-function formatDateTime(value) {
+function formatDateOnly(value) {
   const parsed = parseDate(value);
   if (!parsed) return "-";
 
   return new Intl.DateTimeFormat([], {
     month: "short",
     day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
+    year: "numeric"
   }).format(parsed);
+}
+
+function formatTimeFromValue(value) {
+  const parsed = parseDate(value);
+  if (!parsed) return "-";
+  return formatTime(parsed);
 }
 
 function normalizeCalendarEvent(event) {
@@ -165,8 +183,14 @@ export default function DashboardEventsPage() {
 
   const monthGridDays = useMemo(() => {
     const monthStart = startOfMonth(focusDate);
-    const gridStart = monthStart;
-    return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+    const monthEnd = endOfMonth(focusDate);
+    const gridStart = startOfWeek(monthStart);
+    const gridEnd = endOfWeek(monthEnd);
+    const oneDay = 24 * 60 * 60 * 1000;
+    const naturalLength =
+      Math.round((startOfDay(gridEnd).getTime() - startOfDay(gridStart).getTime()) / oneDay) + 1;
+    const length = Math.max(35, naturalLength);
+    return Array.from({ length }, (_, index) => addDays(gridStart, index));
   }, [focusDate]);
 
   const weekDays = useMemo(() => {
@@ -239,11 +263,11 @@ export default function DashboardEventsPage() {
             </div>
           ))}
 
-          {monthGridDays.map((day) => {
+          {monthGridDays.map((day, index) => {
             const dayKey = toDayKey(day);
             const dayEvents = eventsByDay.get(dayKey) || [];
             const isOutsideMonth = day.getMonth() !== focusDate.getMonth();
-            const isNextMonthStart = isOutsideMonth && day.getDate() === 1;
+            const shouldShowMonthLabel = isOutsideMonth && (day.getDate() === 1 || index === 0);
             const limited = dayEvents.slice(0, 3);
 
             return (
@@ -251,11 +275,10 @@ export default function DashboardEventsPage() {
                 key={dayKey}
                 className={`calendar-day-cell${isOutsideMonth ? " calendar-day-cell-outside" : ""}`}
               >
-                {isNextMonthStart ? (
+                {shouldShowMonthLabel ? (
                   <div className="calendar-month-transition">
                     {new Intl.DateTimeFormat([], {
                       month: "long",
-                      day: "numeric",
                       year: day.getFullYear() === focusDate.getFullYear() ? undefined : "numeric"
                     }).format(day)}
                   </div>
@@ -263,7 +286,6 @@ export default function DashboardEventsPage() {
 
                 <div className="calendar-day-head">
                   <span>{day.getDate()}</span>
-                  {dayEvents.length ? <span className="muted">{dayEvents.length}</span> : null}
                 </div>
 
                 <div className="calendar-event-list">
@@ -313,9 +335,7 @@ export default function DashboardEventsPage() {
                         <span>{event.title || "(Untitled)"}</span>
                       </Link>
                     ))
-                  ) : (
-                    <div className="muted">No events</div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             );
@@ -358,17 +378,20 @@ export default function DashboardEventsPage() {
           <p>View extension-captured events in list or calendar form.</p>
         </div>
 
-        <div className="segment-toggle">
-          {DISPLAY_MODES.map((mode) => (
-            <button
-              key={mode.value}
-              type="button"
-              className={displayMode === mode.value ? "segment-active" : ""}
-              onClick={() => setDisplayMode(mode.value)}
-            >
-              {mode.label}
-            </button>
-          ))}
+        <div className="view-toolbar">
+          <div className="segment-toggle">
+            {DISPLAY_MODES.map((mode) => (
+              <button
+                key={mode.value}
+                type="button"
+                className={displayMode === mode.value ? "segment-active" : ""}
+                onClick={() => setDisplayMode(mode.value)}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <ThemeToggle />
         </div>
       </header>
 
@@ -418,26 +441,24 @@ export default function DashboardEventsPage() {
           <div className="page-head">
             <div>
               <h3>
-                Saved Events From{" "}
+                Saved Events from{" "}
                 <a
                   href="https://github.com/thetireddude/polyprompt-chrome-extension"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  EventSnap
+                  PolySync
                 </a>
               </h3>
               <p className="muted">{events.length} total</p>
             </div>
 
-            <label>
-              Search
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search by title, host, or source URL"
-              />
-            </label>
+            <input
+              className="search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by title, organizer, or source URL"
+            />
           </div>
 
           {!busy && filteredEvents.length ? (
@@ -446,7 +467,8 @@ export default function DashboardEventsPage() {
                 <thead>
                   <tr>
                     <th>Title</th>
-                    <th>Start</th>
+                    <th>Start Day</th>
+                    <th>Start Time</th>
                     <th>Location</th>
                     <th>Source</th>
                     <th>Action</th>
@@ -456,7 +478,8 @@ export default function DashboardEventsPage() {
                   {filteredEvents.map((event) => (
                     <tr key={event.id}>
                       <td>{event.title || "(Untitled)"}</td>
-                      <td>{formatDateTime(event.start_datetime)}</td>
+                      <td>{formatDateOnly(event.start_datetime)}</td>
+                      <td>{formatTimeFromValue(event.start_datetime)}</td>
                       <td>{event.location || "-"}</td>
                       <td>{event.source_url || "-"}</td>
                       <td>

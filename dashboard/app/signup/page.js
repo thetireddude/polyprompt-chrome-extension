@@ -47,7 +47,7 @@ export default function SignupPage() {
   return (
     <main className="auth-shell">
       <section className="auth-card">
-        <p className="brand-kicker">EventSnap Dashboard</p>
+        <p className="brand-kicker">PolySync Dashboard</p>
         <h1>Create account</h1>
         <p>Account creation is automatic the first time you continue with Google.</p>
 

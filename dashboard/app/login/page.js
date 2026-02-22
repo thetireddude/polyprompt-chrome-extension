@@ -47,7 +47,7 @@ export default function LoginPage() {
   return (
     <main className="auth-shell">
       <section className="auth-card">
-        <p className="brand-kicker">EventSnap Dashboard</p>
+        <p className="brand-kicker">PolySync Dashboard</p>
         <h1>Sign in</h1>
         <p>Use your Google account to manage captured events across devices.</p>
 

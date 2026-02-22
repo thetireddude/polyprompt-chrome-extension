@@ -13,6 +13,7 @@ const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const MODEL_NAME = "gpt-4.1-mini"; // Reasonable default; can be changed later
 const SUPABASE_CLIENTS = new Map();
 const SUPABASE_STORAGE_PREFIX = "eventsnap_supabase_auth:";
+const OAUTH_FLOW_TIMEOUT_MS = 120000;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return;
@@ -299,13 +300,15 @@ async function signInWithGoogle(config) {
     throw new Error("Supabase did not return an OAuth URL.");
   }
 
-  const callbackUrl = await chrome.identity.launchWebAuthFlow({
+  const callbackUrl = await launchWebAuthFlowWithTimeout({
     url: data.url,
-    interactive: true
+    interactive: true,
+    timeoutMs: OAUTH_FLOW_TIMEOUT_MS,
+    expectedRedirectPrefix: redirectTo
   });
 
-  if (!callbackUrl) {
-    throw new Error("Google sign-in was cancelled.");
+  if (!callbackUrl.startsWith(redirectTo)) {
+    throw new Error(`Unexpected OAuth redirect URL. Expected it to start with ${redirectTo}.`);
   }
 
   await completeAuthCallback(supabase, callbackUrl);
@@ -331,6 +334,50 @@ async function signInWithGoogle(config) {
   }
 
   return session;
+}
+
+function launchWebAuthFlowWithTimeout({ url, interactive, timeoutMs, expectedRedirectPrefix }) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const safeResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    };
+    const safeReject = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      reject(error);
+    };
+
+    const timeoutId = setTimeout(() => {
+      safeReject(
+        new Error(
+          `Google sign-in timed out waiting for the OAuth redirect. Add this exact redirect URL in Supabase Auth settings and retry: ${expectedRedirectPrefix}`
+        )
+      );
+    }, timeoutMs);
+
+    try {
+      chrome.identity.launchWebAuthFlow({ url, interactive }, (callbackUrl) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          safeReject(new Error(runtimeError.message || "Google sign-in failed."));
+          return;
+        }
+        if (!callbackUrl) {
+          safeReject(new Error("Google sign-in was cancelled."));
+          return;
+        }
+        safeResolve(callbackUrl);
+      });
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      safeReject(new Error(msg || "Google sign-in failed."));
+    }
+  });
 }
 
 async function completeAuthCallback(supabase, callbackUrl) {

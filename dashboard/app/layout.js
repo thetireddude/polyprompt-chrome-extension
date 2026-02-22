@@ -12,14 +12,30 @@ const body = Bitter({
 });
 
 export const metadata = {
-  title: "EventSnap Dashboard",
-  description: "Manage captured events synced from EventSnap extension"
+  title: "PolySync Dashboard",
+  description: "Manage captured events synced from the PolySync extension"
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      <body className={`${headline.variable} ${body.variable}`}>{children}</body>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${headline.variable} ${body.variable}`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var theme = localStorage.getItem("polysync-theme") || "dark";
+                  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+                } catch (err) {
+                  document.documentElement.dataset.theme = "dark";
+                }
+              })();
+            `
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }
