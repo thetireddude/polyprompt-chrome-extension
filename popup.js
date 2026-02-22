@@ -1,7 +1,3 @@
-const apiKeyInput = document.getElementById("apiKeyInput");
-const saveKeyBtn = document.getElementById("saveKeyBtn");
-const keyStatus = document.getElementById("keyStatus");
-
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
 const exportIcsBtn = document.getElementById("exportIcsBtn");
@@ -32,14 +28,12 @@ const FLASH_BEFORE_LOADING_MS = 650;
 init();
 
 async function init() {
-  const { openai_api_key, events } = await chrome.storage.local.get(["openai_api_key", "events"]);
-  updateKeyStatus(!!openai_api_key);
+  const { events } = await chrome.storage.local.get(["events"]);
   renderEventsList(events || []);
   wireHandlers();
 }
 
 function wireHandlers() {
-  saveKeyBtn.addEventListener("click", onSaveKey);
   captureBtn.addEventListener("click", onCapture);
   saveEventBtn.addEventListener("click", onSaveEvent);
   exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
@@ -49,17 +43,6 @@ function wireHandlers() {
   loginBtn.addEventListener("click", simulateLogin);
 }
 
-async function onSaveKey() {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    showToast("Enter an API key first");
-    return;
-  }
-  await chrome.storage.local.set({ openai_api_key: key });
-  apiKeyInput.value = "";
-  updateKeyStatus(true);
-  showToast("✓ API key saved");
-}
 
 async function onCapture() {
   flashCamera();
@@ -225,9 +208,6 @@ function renderEventsList(events) {
   }
 }
 
-function updateKeyStatus(saved) {
-  keyStatus.textContent = saved ? "Key saved" : "Key not saved";
-}
 
 function showToast(msg) {
   toastEl.textContent = msg;
