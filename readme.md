@@ -8,7 +8,7 @@ Built for the **Poly Prompt Hackathon 2026** under the **College Life** category
 
 ---
 
-## 📌 Overview
+## Overview
 
 College students frequently discover events through Instagram posts, digital flyers, emails, and websites. However, converting that unstructured visual content into usable calendar events requires manual typing — leading to forgotten details and missed opportunities.
 
@@ -18,7 +18,7 @@ With one click, users can capture a screenshot of any browser tab, and AI instan
 
 ---
 
-## 🚀 The Problem
+## The Problem
 
 Students:
 - Discover events through screenshots and social media
@@ -30,7 +30,7 @@ Manual data entry discourages organization and leads to missed campus experience
 
 ---
 
-## 💡 The Solution
+## The Solution
 
 PolySync introduces a seamless workflow:
 
@@ -45,7 +45,7 @@ From screenshot to structured plan — in under 10 seconds.
 
 ---
 
-## 🧠 How AI Powers PolySync
+## How AI Powers PolySync
 
 PolySync uses OpenAI’s **Responses API with vision capabilities** to:
 
@@ -75,7 +75,7 @@ Human oversight was required for UI state handling and button logic, reinforcing
 
 ---
 
-## 🎥 Demo Story
+## Demo Story
 
 Our demo follows a college student named Alex:
 
@@ -91,7 +91,7 @@ Our demo follows a college student named Alex:
 
 ---
 
-## 🏗 Technical Stack
+## Technical Stack
 
 - Chrome Extension (Manifest V3)
 - OpenAI Responses API (Vision)
@@ -102,7 +102,7 @@ Our demo follows a college student named Alex:
 
 ---
 
-## 🎯 Hackathon Alignment
+## Hackathon Alignment
 
 **Primary Category:** College Life  
 
@@ -133,7 +133,7 @@ PolySync directly supports student life by:
 
 ---
 
-## 🔐 Ethics & Responsible Use
+## Ethics & Responsible Use
 
 - Users must actively trigger screenshot capture.
 - Extracted data is reviewable and editable before saving.
@@ -145,17 +145,14 @@ We prioritize transparency, user agency, and responsible AI deployment.
 
 ---
 
-## 🌐 Links
+## Links
 
-- 🌍 Website: https://polysync.dev  
-- 📂 GitHub: *(Insert repository link)*  
-- 📊 Slides Deck: *(Insert link)*  
-- 🎥 Demo Video: *(Insert link)*  
-- 📄 Privacy & Data Disclaimer: *(Insert link)*  
+- Website: https://polysync.dev  
+- Demo Video: (https://drive.google.com/file/d/1xc23FR5QGmBhK-4OJII7eaFdJeAZHSUv/view?usp=sharing) 
 
 ---
 
-## 👥 Team — Jason’s Jesters
+## Team — Jason’s Jesters
 
 - **Tech Lead:** *(Name)*  
 - **Product Lead:** *(Name)*  
@@ -164,10 +161,6 @@ We prioritize transparency, user agency, and responsible AI deployment.
 Built for Poly Prompt Hackathon 2026.
 
 ---
-
-## ✨ Final Note
-
-PolySync is not just an AI wrapper — it transforms unstructured visual content into structured, actionable plans.
 
 We focused on depth over breadth and built one clear, impactful experience for students:
 
