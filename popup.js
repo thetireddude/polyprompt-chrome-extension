@@ -27,6 +27,7 @@ const formFields = [
 const MOCK_USER = { name: "Alex", initials: "AJ" };
 let isDark = true;
 let cameraRevertTimer = null;
+const FLASH_BEFORE_LOADING_MS = 650;
 
 init();
 
@@ -62,6 +63,7 @@ async function onSaveKey() {
 
 async function onCapture() {
   flashCamera();
+  await delay(FLASH_BEFORE_LOADING_MS);
   showLoading();
 
   chrome.runtime.sendMessage({ type: "CAPTURE_EVENT" }, (response) => {
@@ -114,6 +116,10 @@ async function onSaveEvent() {
   renderEventsList(next);
   showToast("✓ Event saved!");
   showScreen("idle");
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function showScreen(name) {
