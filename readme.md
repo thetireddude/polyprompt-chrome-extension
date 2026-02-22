@@ -2,7 +2,7 @@
 
 **Stay in Sync.**
 
-PolySync is an AI-powered Chrome extension that turns event screenshots into structured, calendar-ready entries in seconds.
+PolySync is an AI-powered Chrome extension that extracts events' information from your screen and turns them into structured, calendar-ready entries in seconds.
 
 Built for the **Poly Prompt Hackathon 2026** under the **College Life** category.
 
@@ -14,7 +14,7 @@ College students frequently discover events through Instagram posts, digital fly
 
 PolySync eliminates this friction.
 
-With one click, users can capture a screenshot of any browser tab, and AI instantly extracts structured event details. What was once a static screenshot becomes clean, editable, calendar-ready data in seconds.
+With one click, users can capture a screenshot of any browser tab. AI instantly detects an event and extracts structured event details. What was once a static screenshot becomes clean, editable, and calendar-ready data in seconds.
 
 ---
 
@@ -22,8 +22,8 @@ With one click, users can capture a screenshot of any browser tab, and AI instan
 
 Students:
 - Discover events through screenshots and social media
-- Forget key details (time, location, registration links)
-- Delay adding events to their calendar
+- Delay adding events to their calendar, and eventually forget to keep track of them
+- Make mistakes entering key details (time, location, registration links)
 - Miss opportunities due to manual entry friction
 
 Manual data entry discourages organization and leads to missed campus experiences.
@@ -35,11 +35,11 @@ Manual data entry discourages organization and leads to missed campus experience
 PolySync introduces a seamless workflow:
 
 1. Click **“Capture Event”**
-2. Screenshot the current browser tab
-3. AI extracts structured event details
+2. Capture the current browser tab
+3. AI detects an event & extracts structured event details
 4. Review and edit extracted information
-5. Save locally or export as an ICS file
-6. Sync to your calendar
+5. Save locally, export as an ICS file or save online via Google log-in
+6. Easily sync to your Google calendar
 
 From screenshot to structured plan — in under 10 seconds.
 
@@ -80,32 +80,34 @@ Human oversight was required for UI state handling and button logic, reinforcing
 Our demo follows a college student named Alex:
 
 - She discovers a campus event on social media.
-- Instead of manually typing details, she opens PolySync.
+- Instead of manually typing details, she uses PolySync.
 - Within seconds, event data is extracted automatically.
-- She reviews and edits a minor detail.
-- The event appears in her dashboard.
-- She adds a friend and syncs it.
+- She reviews and edits minor details if needed.
+- The event is added and appears on her dashboard.
+- She adds a friend and syncs it to her calendar.
 - Finally, she deletes the event and signs out — demonstrating full user control.
 
-**Magic Moment:** Turning a screenshot into a structured, actionable event instantly.
+**Our Magic Moment:** Turning a screenshot into a structured, actionable event instantly.
 
 ---
 
 ## Technical Stack
 
 - Chrome Extension (Manifest V3)
-- OpenAI Responses API (Vision)
+- OpenAI Responses API (Vision using gpt4o-mini)
+- Google Auth for user log-in
+- Supabase for event storage
 - Structured JSON extraction
 - Local event storage
 - ICS file export
-- Light/Dark mode dashboard
+- Light/Dark mode UI 
 
 ---
 
 ## Ethics & Responsible Use
 
-- Users must actively trigger screenshot capture.
-- Extracted data is reviewable and editable before saving.
+- Users must actively trigger screenshot capture, which avoids sensitive information being monitored by AI
+- Extracted data is reviewable and editable before & after saving.
 - Users can delete events at any time.
 - No hidden scraping or background monitoring occurs.
 - The tool extracts only visible content and does not fabricate events.
@@ -127,7 +129,7 @@ We prioritize transparency, user agency, and responsible AI deployment.
 - **Product Lead:** *Omar Mohamed*, *Ammara Amin*
 - **Ethics Lead:** *Kylie Chao*, *Marine Hunanyan*  
 
-Built for Poly Prompt Hackathon 2026.
+Built for OpenAI Poly Prompt 2026 Hackathon.
 
 ---
 
