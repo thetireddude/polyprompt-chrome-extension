@@ -102,37 +102,6 @@ Our demo follows a college student named Alex:
 
 ---
 
-## Hackathon Alignment
-
-**Primary Category:** College Life  
-
-PolySync directly supports student life by:
-- Reducing friction in social planning
-- Preventing missed campus opportunities
-- Helping students stay organized effortlessly
-
-### Judging Criteria Alignment
-
-- **Technical Impressiveness (50%)**  
-  Real-time AI vision extraction + structured output + working Chrome extension demo.
-
-- **Impact (20%)**  
-  Solves a common and meaningful student problem.
-
-- **Product Thinking (10%)**  
-  Clear problem → friction → AI-powered solution → calendar-ready output.
-
-- **Use of AI to Build (10%)**  
-  AI assisted development, prompt engineering, and structured output design.
-
-- **Ethics / Responsible Use (10%)**  
-  User review before saving  
-  Editable extracted data  
-  Local control and deletion  
-  No silent background data usage  
-
----
-
 ## Ethics & Responsible Use
 
 - Users must actively trigger screenshot capture.
