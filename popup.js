@@ -70,7 +70,10 @@ async function onAuthButtonClick() {
   if (authBusy) return;
 
   if (isSignedIn()) {
-    await openDashboard();
+    const result = await loadRecentEventsFromSupabase({ silent: false });
+    if (result?.ok) {
+      showToast("✓ Events refreshed");
+    }
     return;
   }
 
@@ -389,7 +392,7 @@ function updateAuthUI() {
     loginBtn.textContent = isSignedIn() ? "Working..." : "Connecting...";
   } else if (isSignedIn()) {
     loginBtn.disabled = false;
-    loginBtn.textContent = "Go to Dashboard";
+    loginBtn.textContent = "Refresh Events";
   } else {
     loginBtn.disabled = false;
     loginBtn.textContent = "Log into Google";
