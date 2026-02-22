@@ -1,92 +1,125 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>EventSnap</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PolySync</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <div class="app">
-      <header class="header">
-        <h1>EventSnap</h1>
-        <p>Capture events from your current tab.</p>
-      </header>
-
-      <!-- Section 1: API Key Settings -->
-      <section class="section">
-        <h2>OpenAI API Key</h2>
-        <div class="row">
-          <input
-            id="apiKeyInput"
-            type="password"
-            placeholder="sk-..."
-            autocomplete="off"
-          />
-          <button id="saveKeyBtn">Save Key</button>
-        </div>
-        <div id="keyStatus" class="status-muted">Key not saved</div>
-      </section>
-
-      <!-- Section 2: Capture Button -->
-      <section class="section">
-        <button id="captureBtn" class="primary">Capture Event</button>
-      </section>
-
-      <!-- Section 3: Status Area -->
-      <section class="section">
-        <div id="status" class="status">Idle</div>
-      </section>
-
-      <!-- Section 4: Event Form (shown only when detected) -->
-      <section id="eventSection" class="section hidden">
-        <h2>Detected Event</h2>
-        <div class="form">
-          <label>
-            Title
-            <input id="title" type="text" />
-          </label>
-          <label>
-            Start Date/Time (ISO)
-            <input id="start_datetime" type="text" placeholder="2026-02-21T18:00:00" />
-          </label>
-          <label>
-            End Date/Time (ISO)
-            <input id="end_datetime" type="text" placeholder="2026-02-21T20:00:00" />
-          </label>
-          <label>
-            Timezone
-            <input id="timezone" type="text" placeholder="America/Los_Angeles" />
-          </label>
-          <label>
-            Location
-            <input id="location" type="text" />
-          </label>
-          <label>
-            Host
-            <input id="host" type="text" />
-          </label>
-          <label>
-            Registration Link
-            <input id="registration_link" type="text" />
-          </label>
-          <label>
-            Cost
-            <input id="cost" type="text" />
-          </label>
-        </div>
-        <div class="row">
-          <button id="saveEventBtn">Save Event</button>
-          <button id="exportIcsBtn">Export ICS</button>
-        </div>
-      </section>
-
-      <!-- Section 5: Saved Events List -->
-      <section class="section">
-        <h2>Saved Events</h2>
-        <div id="eventsList" class="list"></div>
-      </section>
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">📸</div>
+        <div class="logo-text">Poly<span>Sync</span></div>
+      </div>
+      <div class="header-actions">
+        <div class="user-avatar" id="user-avatar" title="Signed in"></div>
+        <button class="icon-btn" id="saved-events-btn" title="Saved events">☰</button>
+        <button class="icon-btn" id="theme-toggle" title="Toggle light/dark mode">☀️</button>
+      </div>
     </div>
+
+    <div class="screen active" id="screen-idle">
+      <div class="signin-banner" id="signin-banner">
+        <div class="signin-text">
+          <p><strong>Save & sync events</strong></p>
+          <p>Sign in to keep your events across sessions.</p>
+        </div>
+        <button class="google-btn" id="simulate-login-btn">Sign in</button>
+      </div>
+
+      <div class="greeting" id="greeting">
+        <p>Hello, <span id="greeting-name">there</span> 👋</p>
+      </div>
+
+      <div style="height: 4px"></div>
+      <div class="idle-body">
+        <button class="capture-btn" id="captureBtn"><span id="btn-camera">📷</span> Capture Event</button>
+        <p class="hint">Navigate to an event page, flyer, or Instagram post,<br />then click Capture.</p>
+      </div>
+
+      <div class="divider"></div>
+      <div style="height: 12px"></div>
+      <div class="saved-header">
+        <span>Saved Events</span>
+      </div>
+      <div class="saved-list" id="eventsList"></div>
+    </div>
+
+    <div class="screen" id="screen-loading">
+      <div class="loading-body">
+        <div style="width: 100%">
+          <div class="progress-track"><div class="progress-bar" id="pbar"></div></div>
+        </div>
+        <div class="status-steps">
+          <div class="step done" id="step1"><div class="step-icon">✓</div> Capturing screenshot</div>
+          <div class="step active" id="step2"><div class="step-icon"><div class="spinner"></div></div> Analyzing with AI</div>
+          <div class="step" id="step3"><div class="step-icon">○</div> Extracting event details</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-result">
+      <div class="result-body">
+        <div class="event-badge">Event detected</div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Title</label>
+            <input type="text" id="title" />
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>Start Day</label>
+              <input type="text" id="start_day" placeholder="2026-02-21" />
+            </div>
+            <div class="field">
+              <label>Start Time</label>
+              <input type="text" id="start_time" placeholder="9:00 AM" />
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label>End Day</label>
+              <input type="text" id="end_day" placeholder="2026-02-21" />
+            </div>
+            <div class="field">
+              <label>End Time</label>
+              <input type="text" id="end_time" placeholder="6:00 PM" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Location</label>
+            <input type="text" id="location" />
+          </div>
+          <div class="field">
+            <label>Host</label>
+            <input type="text" id="host" />
+          </div>
+          <div class="field">
+            <label>Source URL</label>
+            <input type="text" id="source_url" />
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" id="saveEventBtn">Create Event</button>
+          <button class="btn-secondary" id="deleteEventBtn">Delete Event</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-noevt">
+      <div class="no-event-body">
+        <div class="no-event-icon">🔍</div>
+        <div class="no-event-title">No event detected</div>
+        <div class="no-event-sub">
+          The current page doesn't appear to contain event information. Try navigating to an event flyer,
+          Instagram post, or event page.
+        </div>
+        <button class="capture-btn" id="back-btn" style="max-width: 240px; margin-top: 8px">← Back</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
 
     <script src="popup.js"></script>
   </body>
