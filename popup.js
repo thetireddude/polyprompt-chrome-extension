@@ -205,14 +205,21 @@ function revertCamera() {
 
 function fillForm(eventData) {
   formFields.forEach((field) => {
-    document.getElementById(field).value = eventData[field] ?? "";
+    const input = document.getElementById(field);
+    if (!input) return;
+    input.value = eventData[field] ?? "";
   });
 }
 
 function readForm() {
   const result = {};
   formFields.forEach((field) => {
-    const value = document.getElementById(field).value.trim();
+    const input = document.getElementById(field);
+    if (!input) {
+      result[field] = null;
+      return;
+    }
+    const value = input.value.trim();
     result[field] = value || null;
   });
   return result;
