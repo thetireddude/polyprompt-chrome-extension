@@ -1,24 +1,13 @@
-﻿/*
-  EventSnap Popup Script
-  - Handles API key storage
-  - Triggers capture via background service worker
-  - Renders editable event form
-  - Saves events to chrome.storage.local
-  - Exports ICS files client-side
-*/
-
-const apiKeyInput = document.getElementById("apiKeyInput");
-const saveKeyBtn = document.getElementById("saveKeyBtn");
-const keyStatus = document.getElementById("keyStatus");
-
 const captureBtn = document.getElementById("captureBtn");
-const statusEl = document.getElementById("status");
-
-const eventSection = document.getElementById("eventSection");
 const saveEventBtn = document.getElementById("saveEventBtn");
 const exportIcsBtn = document.getElementById("exportIcsBtn");
-
 const eventsList = document.getElementById("eventsList");
+const toastEl = document.getElementById("toast");
+
+const themeToggleBtn = document.getElementById("theme-toggle");
+const savedEventsBtn = document.getElementById("saved-events-btn");
+const backBtn = document.getElementById("back-btn");
+const loginBtn = document.getElementById("simulate-login-btn");
 
 const formFields = [
   "title",
@@ -31,73 +20,68 @@ const formFields = [
   "cost"
 ];
 
-let currentEvent = null;
+const MOCK_USER = { name: "Alex", initials: "AJ" };
+let isDark = true;
+let cameraRevertTimer = null;
+const FLASH_BEFORE_LOADING_MS = 650;
 
 init();
 
 async function init() {
-  // Load saved API key status and saved events on startup.
-  const { openai_api_key } = await chrome.storage.local.get("openai_api_key");
-  updateKeyStatus(!!openai_api_key);
-
-  const { events } = await chrome.storage.local.get("events");
+  const { events } = await chrome.storage.local.get(["events"]);
   renderEventsList(events || []);
+  wireHandlers();
 }
 
-saveKeyBtn.addEventListener("click", async () => {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    updateStatus("Please enter a key.");
-    return;
-  }
-  await chrome.storage.local.set({ openai_api_key: key });
-  apiKeyInput.value = "";
-  updateKeyStatus(true);
-});
+function wireHandlers() {
+  captureBtn.addEventListener("click", onCapture);
+  saveEventBtn.addEventListener("click", onSaveEvent);
+  exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
+  themeToggleBtn.addEventListener("click", toggleTheme);
+  savedEventsBtn.addEventListener("click", () => showScreen("idle"));
+  backBtn.addEventListener("click", () => showScreen("idle"));
+  loginBtn.addEventListener("click", simulateLogin);
+}
 
-captureBtn.addEventListener("click", async () => {
-  updateStatus("Capturing...");
-  setCaptureEnabled(false);
 
-  chrome.runtime.sendMessage({ type: "CAPTURE_EVENT" }, async (response) => {
-    setCaptureEnabled(true);
+async function onCapture() {
+  flashCamera();
+  await delay(FLASH_BEFORE_LOADING_MS);
+  showLoading();
 
+  chrome.runtime.sendMessage({ type: "CAPTURE_EVENT" }, (response) => {
     if (!response) {
-      updateStatus("No response from background.");
+      showToast("No response from background");
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
     if (!response.ok) {
-      updateStatus(`Error: ${response.error}`);
-      if (response.details) {
-        console.warn("OpenAI details:", response.details);
-      }
-      eventSection.classList.add("hidden");
+      showToast(response.error || "Capture failed");
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
     const data = response.data;
     if (!data || data.is_event !== true) {
-      updateStatus("No event detected.");
-      eventSection.classList.add("hidden");
-      currentEvent = null;
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
-    updateStatus("Done.");
-    currentEvent = data.event || {};
-
-    // Default timezone if missing per requirements.
-    if (!currentEvent.timezone) {
-      currentEvent.timezone = "America/Los_Angeles";
+    const event = data.event || {};
+    if (!event.timezone) {
+      event.timezone = "America/Los_Angeles";
     }
-
-    fillForm(currentEvent);
-    eventSection.classList.remove("hidden");
+    fillForm(event);
+    showScreen("result");
+    revertCamera();
   });
-});
+}
 
-saveEventBtn.addEventListener("click", async () => {
+async function onSaveEvent() {
   const eventData = readForm();
   if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
 
@@ -113,41 +97,62 @@ saveEventBtn.addEventListener("click", async () => {
   await chrome.storage.local.set({ events: next });
 
   renderEventsList(next);
-  updateStatus("Event saved.");
-});
-
-exportIcsBtn.addEventListener("click", () => {
-  const eventData = readForm();
-  if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
-  exportICS(eventData, "event");
-});
-
-function updateKeyStatus(saved) {
-  keyStatus.textContent = saved ? "Key saved" : "Key not saved";
+  showToast("✓ Event saved!");
+  showScreen("idle");
 }
 
-function updateStatus(text) {
-  statusEl.textContent = text;
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function setCaptureEnabled(enabled) {
-  captureBtn.disabled = !enabled;
-  captureBtn.textContent = enabled ? "Capture Event" : "Working...";
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+  document.getElementById(`screen-${name}`).classList.add("active");
+}
+
+function showLoading() {
+  showScreen("loading");
+  const pb = document.getElementById("pbar");
+  pb.style.animation = "none";
+  pb.offsetHeight;
+  pb.style.animation = "";
+
+  document.getElementById("step1").className = "step done";
+  document.getElementById("step1").querySelector(".step-icon").textContent = "✓";
+  document.getElementById("step2").className = "step active";
+  document.getElementById("step2").querySelector(".step-icon").innerHTML = '<div class="spinner"></div>';
+  document.getElementById("step3").className = "step";
+  document.getElementById("step3").querySelector(".step-icon").textContent = "○";
+}
+
+function flashCamera() {
+  const icon = document.getElementById("btn-camera");
+  if (cameraRevertTimer) clearTimeout(cameraRevertTimer);
+  icon.textContent = "📸";
+  icon.classList.remove("flashing");
+  void icon.offsetWidth;
+  icon.classList.add("flashing");
+}
+
+function revertCamera() {
+  const icon = document.getElementById("btn-camera");
+  cameraRevertTimer = setTimeout(() => {
+    icon.classList.remove("flashing");
+    icon.textContent = "📷";
+  }, 2500);
 }
 
 function fillForm(eventData) {
   formFields.forEach((field) => {
-    const el = document.getElementById(field);
-    el.value = eventData[field] ?? "";
+    document.getElementById(field).value = eventData[field] ?? "";
   });
 }
 
 function readForm() {
   const result = {};
   formFields.forEach((field) => {
-    const el = document.getElementById(field);
-    const value = el.value.trim();
-    result[field] = value ? value : null;
+    const value = document.getElementById(field).value.trim();
+    result[field] = value || null;
   });
   return result;
 }
@@ -156,50 +161,78 @@ function renderEventsList(events) {
   eventsList.innerHTML = "";
 
   if (!events.length) {
-    eventsList.innerHTML = '<div class="status-muted">No saved events yet.</div>';
+    eventsList.innerHTML = '<div class="empty-state">No saved events yet.</div>';
     return;
   }
 
   for (const ev of events) {
     const item = document.createElement("div");
-    item.className = "list-item";
+    item.className = "saved-item";
+
+    const dot = document.createElement("div");
+    dot.className = "saved-dot";
+
+    const info = document.createElement("div");
+    info.className = "saved-info";
 
     const title = document.createElement("div");
-    title.className = "title";
+    title.className = "saved-title";
     title.textContent = ev.title || "(Untitled Event)";
 
-    const meta = document.createElement("div");
-    meta.className = "meta";
-    meta.textContent = ev.start_datetime || "No start time";
-
-    const actions = document.createElement("div");
-    actions.className = "actions";
+    const date = document.createElement("div");
+    date.className = "saved-date";
+    date.textContent = ev.start_datetime || "No start time";
 
     const exportBtn = document.createElement("button");
-    exportBtn.textContent = "Export ICS";
+    exportBtn.className = "saved-export";
+    exportBtn.textContent = "↓ ICS";
     exportBtn.addEventListener("click", () => exportICS(ev, ev.title || "event"));
 
     const deleteBtn = document.createElement("button");
+    deleteBtn.className = "saved-delete";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", async () => {
       const { events } = await chrome.storage.local.get("events");
-      const next = (events || []).filter((e) => e.id !== ev.id);
+      const next = (events || []).filter((eventItem) => eventItem.id !== ev.id);
       await chrome.storage.local.set({ events: next });
       renderEventsList(next);
     });
 
-    actions.appendChild(exportBtn);
-    actions.appendChild(deleteBtn);
-
-    item.appendChild(title);
-    item.appendChild(meta);
-    item.appendChild(actions);
+    info.appendChild(title);
+    info.appendChild(date);
+    item.appendChild(dot);
+    item.appendChild(info);
+    item.appendChild(exportBtn);
+    item.appendChild(deleteBtn);
     eventsList.appendChild(item);
   }
 }
 
-// Generates and downloads an ICS file.
+
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  setTimeout(() => toastEl.classList.remove("show"), 2200);
+}
+
+function simulateLogin() {
+  document.getElementById("signin-banner").classList.add("hidden");
+  document.getElementById("greeting-name").textContent = MOCK_USER.name;
+  document.getElementById("greeting").classList.add("visible");
+  const avatar = document.getElementById("user-avatar");
+  avatar.textContent = MOCK_USER.initials;
+  avatar.classList.add("visible");
+  showToast(`✓ Signed in as ${MOCK_USER.name}`);
+}
+
+function toggleTheme() {
+  isDark = !isDark;
+  document.body.classList.toggle("light", !isDark);
+  themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
+}
+
 function exportICS(eventData, filenameBase) {
+  if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
   const ics = buildICS(eventData);
   const blob = new Blob([ics], { type: "text/calendar" });
   const url = URL.createObjectURL(blob);
@@ -212,24 +245,21 @@ function exportICS(eventData, filenameBase) {
   a.remove();
 
   URL.revokeObjectURL(url);
+  showToast(`↓ ${sanitizeFilename(filenameBase)}.ics downloaded`);
 }
 
 function buildICS(eventData) {
   const now = new Date();
   const dtstamp = formatICSDateTimeUTC(now);
-
   const start = parseISO(eventData.start_datetime);
   let end = parseISO(eventData.end_datetime);
 
-  // If end is missing but start exists, default to +2 hours.
-  // This is a documented MVP behavior per requirements.
   if (start && !end) {
     end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
   }
 
   const dtstart = start ? formatICSDateTimeUTC(start) : "";
   const dtend = end ? formatICSDateTimeUTC(end) : "";
-
   const summary = escapeICS(eventData.title || "Event");
   const location = escapeICS(eventData.location || "");
   const description = escapeICS(buildDescription(eventData));
@@ -237,9 +267,9 @@ function buildICS(eventData) {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//EventSnap//EN",
+    "PRODID:-//PolySync//EN",
     "BEGIN:VEVENT",
-    `UID:${Date.now()}@eventsnap`,
+    `UID:${Date.now()}@polysync`,
     `DTSTAMP:${dtstamp}`
   ];
 
@@ -248,7 +278,6 @@ function buildICS(eventData) {
   lines.push(`SUMMARY:${summary}`);
   if (location) lines.push(`LOCATION:${location}`);
   if (description) lines.push(`DESCRIPTION:${description}`);
-
   lines.push("END:VEVENT", "END:VCALENDAR");
 
   return lines.join("\r\n");
@@ -264,8 +293,8 @@ function buildDescription(eventData) {
 
 function parseISO(value) {
   if (!value) return null;
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? null : date;
 }
 
 function formatICSDateTimeUTC(date) {
@@ -283,16 +312,9 @@ function formatICSDateTimeUTC(date) {
 }
 
 function escapeICS(text) {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/\n/g, "\\n")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
+  return text.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
 
 function sanitizeFilename(name) {
-  return (name || "event")
-    .replace(/[^a-z0-9_-]+/gi, "_")
-    .replace(/^_+|_+$/g, "")
-    .toLowerCase() || "event";
+  return (name || "event").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase() || "event";
 }
