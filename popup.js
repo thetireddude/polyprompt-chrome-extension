@@ -1,6 +1,7 @@
 const RUNTIME_CONFIG = globalThis.EVENTSNAP_CONFIG || {};
 const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl || "https://YOUR_PROJECT_REF.supabase.co";
 const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey || "YOUR_SUPABASE_PUBLISHABLE_KEY";
+const DASHBOARD_URL = buildDashboardUrl(RUNTIME_CONFIG.dashboardUrl);
 const AUTH_CONFIG = {
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY
@@ -44,6 +45,13 @@ async function init() {
   wireHandlers();
   await hydrateAuthSession();
 
+  if (isSignedIn()) {
+    const recentLoad = await loadRecentEventsFromSupabase({ silent: true });
+    if (recentLoad.ok) {
+      return;
+    }
+  }
+
   const { events } = await chrome.storage.local.get(["events"]);
   renderEventsList(events || []);
 }
@@ -62,7 +70,7 @@ async function onAuthButtonClick() {
   if (authBusy) return;
 
   if (isSignedIn()) {
-    await signOut();
+    await openDashboard();
     return;
   }
 
@@ -381,10 +389,10 @@ function updateAuthUI() {
     loginBtn.textContent = isSignedIn() ? "Working..." : "Connecting...";
   } else if (isSignedIn()) {
     loginBtn.disabled = false;
-    loginBtn.textContent = "Log Out";
+    loginBtn.textContent = "Go to Dashboard";
   } else {
     loginBtn.disabled = false;
-    loginBtn.textContent = "Log In With Google";
+    loginBtn.textContent = "Log into Google";
   }
 
   if (isSignedIn()) {
@@ -459,11 +467,28 @@ async function signInWithGoogle() {
     }
 
     setAuthSession(session);
-    showToast(`✓ Signed in as ${session.user?.email || getDisplayName(session.user)}`);
+    const recentLoad = await loadRecentEventsFromSupabase({ silent: true });
+    showScreen("idle");
+
+    const signedInLabel = session.user?.email || getDisplayName(session.user);
+    if (!recentLoad.ok) {
+      showToast(`Signed in as ${signedInLabel}. Could not load recent events.`);
+      return;
+    }
+
+    showToast(`✓ Signed in as ${signedInLabel}`);
   } catch (err) {
     showToast(`Sign-in failed: ${extractErrorMessage(err, "Could not sign in with Google.")}`);
   } finally {
     setAuthBusy(false);
+  }
+}
+
+async function openDashboard() {
+  try {
+    await chrome.tabs.create({ url: DASHBOARD_URL });
+  } catch (err) {
+    showToast(`Could not open dashboard: ${extractErrorMessage(err, "Unknown error.")}`);
   }
 }
 
@@ -532,6 +557,55 @@ function normalizeSession(raw) {
     expires_at: explicitExpiresAt > 0 ? explicitExpiresAt : fallbackExpiresAt,
     user: raw.user || null
   };
+}
+
+async function loadRecentEventsFromSupabase({ silent = false } = {}) {
+  const session = await getSyncSession();
+  if (!session || !session.user?.id) {
+    return { ok: false, error: "Not signed in." };
+  }
+
+  try {
+    return await fetchRecentEvents(session, true, silent);
+  } catch (err) {
+    const error = extractErrorMessage(err, "Could not load recent events.");
+    if (!silent) showToast(error);
+    return { ok: false, error };
+  }
+}
+
+async function fetchRecentEvents(session, allowReloadRetry, silent) {
+  const params = new URLSearchParams({
+    select: "id,title,start_datetime,end_datetime,timezone,location,host,registration_link,cost,source_url,created_at",
+    user_id: `eq.${session.user.id}`,
+    order: "created_at.desc",
+    limit: "3"
+  });
+
+  const { response, payload } = await fetchSupabase(`/rest/v1/events?${params.toString()}`, {
+    method: "GET",
+    accessToken: session.access_token
+  });
+
+  if (response.status === 401 && allowReloadRetry) {
+    const latest = await getSyncSession();
+    if (!latest) {
+      return { ok: false, error: "Session expired. Please log in again." };
+    }
+
+    return fetchRecentEvents(latest, false, silent);
+  }
+
+  if (!response.ok) {
+    const error = extractApiMessage(payload, `Could not load recent events (${response.status}).`);
+    if (!silent) showToast(error);
+    return { ok: false, error };
+  }
+
+  const events = Array.isArray(payload) ? payload : [];
+  await chrome.storage.local.set({ events });
+  renderEventsList(events);
+  return { ok: true, data: events };
 }
 
 async function syncEventToSupabase(localEvent) {
@@ -654,4 +728,19 @@ async function getActiveTabUrl() {
   const tabUrl = tabs[0]?.url;
   if (!tabUrl || !/^https?:/i.test(tabUrl)) return null;
   return tabUrl;
+}
+
+function buildDashboardUrl(rawUrl) {
+  const fallback = "http://localhost:3000/dashboard";
+  if (!rawUrl) return fallback;
+
+  try {
+    const url = new URL(String(rawUrl));
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/dashboard";
+    }
+    return url.toString();
+  } catch (_err) {
+    return fallback;
+  }
 }
