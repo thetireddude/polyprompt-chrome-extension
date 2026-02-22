@@ -456,25 +456,18 @@ async function signInWithGoogle() {
 
   try {
     assertSupabaseConfig();
-
-    const redirectTo = chrome.identity.getRedirectURL("supabase-auth");
-    const authUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
-    authUrl.searchParams.set("provider", "google");
-    authUrl.searchParams.set("redirect_to", redirectTo);
-    authUrl.searchParams.set("response_type", "token");
-    authUrl.searchParams.set("prompt", "select_account");
-    authUrl.searchParams.set("access_type", "offline");
-
-    const callbackUrl = await chrome.identity.launchWebAuthFlow({
-      url: authUrl.toString(),
-      interactive: true
+    const response = await sendRuntimeMessage({
+      type: "AUTH_SIGN_IN",
+      config: {
+        supabaseUrl: SUPABASE_URL,
+        supabaseAnonKey: SUPABASE_ANON_KEY
+      }
     });
-
-    if (!callbackUrl) {
-      throw new Error("Google sign-in was cancelled.");
+    if (!response?.ok) {
+      throw new Error(response?.error || "Could not sign in with Google.");
     }
 
-    const session = await buildSessionFromCallback(callbackUrl);
+    const session = normalizeSession(response.session);
     if (!session) {
       throw new Error("Could not create an authenticated session.");
     }
@@ -487,6 +480,20 @@ async function signInWithGoogle() {
   } finally {
     setAuthBusy(false);
   }
+}
+
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        reject(new Error(lastErr.message || "Extension message failed."));
+        return;
+      }
+
+      resolve(response);
+    });
+  });
 }
 
 async function signOut() {
@@ -508,53 +515,6 @@ async function signOut() {
     setAuthBusy(false);
     showToast("Signed out.");
   }
-}
-
-async function buildSessionFromCallback(callbackUrl) {
-  const parsed = parseAuthCallback(callbackUrl);
-  if (!parsed.access_token) {
-    throw new Error("No access token returned from Supabase.");
-  }
-
-  const user = await fetchSupabaseUser(parsed.access_token);
-  const session = normalizeSession({
-    ...parsed,
-    user
-  });
-
-  return session;
-}
-
-function parseAuthCallback(callbackUrl) {
-  const parsed = new URL(callbackUrl);
-  const queryParams = parsed.searchParams;
-  const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
-  const params = mergeSearchParams(queryParams, hashParams);
-
-  const error = params.get("error") || params.get("error_code");
-  const errorDescription = params.get("error_description");
-  if (error || errorDescription) {
-    throw new Error(errorDescription || error || "Google authentication failed.");
-  }
-
-  return {
-    access_token: params.get("access_token"),
-    refresh_token: params.get("refresh_token"),
-    token_type: params.get("token_type") || "bearer",
-    expires_in: Number(params.get("expires_in") || 3600),
-    expires_at: Number(params.get("expires_at") || 0)
-  };
-}
-
-function mergeSearchParams(searchParams, hashParams) {
-  const merged = new URLSearchParams();
-  for (const [key, value] of searchParams.entries()) {
-    merged.set(key, value);
-  }
-  for (const [key, value] of hashParams.entries()) {
-    merged.set(key, value);
-  }
-  return merged;
 }
 
 function normalizeSession(raw) {
