@@ -9,12 +9,12 @@ const AUTH_CONFIG = {
 
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
+const cancelEventBtn = document.getElementById("cancel-event-btn");
 const exportIcsBtn = document.getElementById("exportIcsBtn");
 const eventsList = document.getElementById("eventsList");
 const toastEl = document.getElementById("toast");
 
 const themeToggleBtn = document.getElementById("theme-toggle");
-const savedEventsBtn = document.getElementById("saved-events-btn");
 const backBtn = document.getElementById("back-btn");
 const loginBtn = document.getElementById("google-login-btn");
 const loginBtnLabel = document.getElementById("google-login-label");
@@ -62,9 +62,9 @@ async function init() {
 function wireHandlers() {
   captureBtn.addEventListener("click", onCapture);
   saveEventBtn.addEventListener("click", onSaveEvent);
+  cancelEventBtn.addEventListener("click", onCancelEvent);
   exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
   themeToggleBtn.addEventListener("click", toggleTheme);
-  savedEventsBtn.addEventListener("click", () => showScreen("idle"));
   backBtn.addEventListener("click", () => showScreen("idle"));
   loginBtn.addEventListener("click", onAuthButtonClick);
   dashboardBtn.addEventListener("click", onDashboardButtonClick);
@@ -155,6 +155,10 @@ async function onSaveEvent() {
 
   await loadRecentEventsFromSupabase({ silent: true });
   showToast("✓ Event saved and synced.");
+  showScreen("idle");
+}
+
+function onCancelEvent() {
   showScreen("idle");
 }
 

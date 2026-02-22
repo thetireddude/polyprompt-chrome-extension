@@ -14,7 +14,6 @@
       </div>
       <div class="header-actions">
         <div class="user-avatar" id="user-avatar" title="Signed in"></div>
-        <button class="icon-btn" id="saved-events-btn" title="Saved events">☰</button>
         <button class="icon-btn" id="theme-toggle" title="Toggle light/dark mode">☀️</button>
       </div>
     </div>
@@ -92,9 +91,14 @@
             <input type="text" id="registration_link" />
           </div>
         </div>
-        <div class="actions">
-          <button class="btn-primary" id="saveEventBtn">Save Event</button>
-          <button class="btn-secondary" id="exportIcsBtn">↓ Export ICS</button>
+        <div class="event-actions">
+          <div class="event-actions-row event-actions-row--two">
+            <button class="btn-primary" id="saveEventBtn">Save Event</button>
+            <button class="btn-secondary" id="cancel-event-btn">Cancel</button>
+          </div>
+          <div class="event-actions-row event-actions-row--one">
+            <button class="btn-secondary" id="exportIcsBtn">↓ Export ICS</button>
+          </div>
         </div>
       </div>
     </div>

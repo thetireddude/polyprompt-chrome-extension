@@ -167,7 +167,10 @@ body {
   font-size: 12px;
   padding: 8px 10px;
 }
-.actions { display: flex; gap: 8px; margin-top: 14px; }
+.event-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.event-actions-row { display: flex; gap: 8px; }
+.event-actions-row--two button { flex: 1; }
+.event-actions-row--one button { width: 100%; }
 .btn-primary { flex: 1; padding: 11px; background: var(--accent); color: #fff; border: none; border-radius: 10px; cursor: pointer; }
 .btn-secondary { flex: 1; padding: 11px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 
