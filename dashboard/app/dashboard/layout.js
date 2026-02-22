@@ -6,7 +6,6 @@ import { useState } from "react";
 import { useSessionGuard } from "@/lib/useSessionGuard";
 
 const EVENT_NAV_ITEM = { href: "/dashboard", label: "Events" };
-const ACCOUNT_NAV_ITEM = { href: "/dashboard/account", label: "Account" };
 
 export default function DashboardLayout({ children }) {
   const pathname = usePathname();
@@ -14,7 +13,6 @@ export default function DashboardLayout({ children }) {
   const { user, loading, supabase } = useSessionGuard();
   const [signingOut, setSigningOut] = useState(false);
   const isEventsActive = pathname === "/dashboard" || pathname.startsWith("/dashboard/events/");
-  const isAccountActive = pathname.startsWith("/dashboard/account") || pathname === "/dashboard/settings";
 
   async function signOut() {
     setSigningOut(true);
@@ -54,16 +52,6 @@ export default function DashboardLayout({ children }) {
             }`}
           >
             {EVENT_NAV_ITEM.label}
-          </Link>
-          <Link
-            href={ACCOUNT_NAV_ITEM.href}
-            className={`inline-flex w-fit items-center justify-center rounded-full border px-6 py-2 text-sm font-semibold leading-none transition-colors ${
-              isAccountActive
-                ? "border-slate-900 bg-slate-900 text-white"
-                : "border-slate-800 text-slate-900 hover:bg-slate-100"
-            }`}
-          >
-            {ACCOUNT_NAV_ITEM.label}
           </Link>
         </nav>
 
