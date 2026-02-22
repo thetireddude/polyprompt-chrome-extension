@@ -6,7 +6,9 @@ const OPENAI_API_KEY = "YOUR_API_KEY";
   EventSnap Background Service Worker (MV3)
   - Captures visible tab screenshot on demand
   - Calls OpenAI Responses API with image input
-  - Returns structured JSON to popup
+  - Syncs to local dashboard API in local-dev mode
+  - Handles Supabase auth/session for extension login
+  - Syncs saved events to Supabase automatically
 */
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
@@ -124,7 +126,6 @@ async function callOpenAI(apiKey, dataUrl) {
 
   const body = {
     model: MODEL_NAME,
-    // Enforce JSON-only output (Responses API now uses text.format)
     text: { format: { type: "json_object" } },
     input: [
       {
@@ -151,13 +152,7 @@ async function callOpenAI(apiKey, dataUrl) {
   });
 
   if (!resp.ok) {
-    let details = "";
-    try {
-      const errJson = await resp.json();
-      details = errJson.error?.message || JSON.stringify(errJson);
-    } catch (e) {
-      details = await resp.text();
-    }
+    const details = await safeReadErrorResponse(resp);
     throw new Error(`OpenAI API error (${resp.status}): ${details}`);
   }
 
@@ -173,16 +168,16 @@ function buildSystemPrompt() {
     "Use timezone default 'America/Los_Angeles' when missing.",
     "Return EXACTLY this JSON schema:",
     "{",
-    "  \"is_event\": boolean,",
-    "  \"event\": {",
-    "    \"title\": string|null,",
-    "    \"start_datetime\": string|null,",
-    "    \"end_datetime\": string|null,",
-    "    \"timezone\": string,",
-    "    \"location\": string|null,",
-    "    \"host\": string|null,",
-    "    \"registration_link\": string|null,",
-    "    \"cost\": string|null",
+    '  "is_event": boolean,',
+    '  "event": {',
+    '    "title": string|null,',
+    '    "start_datetime": string|null,',
+    '    "end_datetime": string|null,',
+    '    "timezone": string,',
+    '    "location": string|null,',
+    '    "host": string|null,',
+    '    "registration_link": string|null,',
+    '    "cost": string|null',
     "  }",
     "}",
     "If is_event is false, set event to null."
@@ -192,12 +187,10 @@ function buildSystemPrompt() {
 function extractOutputText(responseJson) {
   if (!responseJson) return "";
 
-  // Some Responses API payloads include output_text as a convenience.
   if (typeof responseJson.output_text === "string") {
     return responseJson.output_text.trim();
   }
 
-  // Otherwise, walk the output array.
   const output = responseJson.output || [];
   for (const item of output) {
     const content = item.content || [];

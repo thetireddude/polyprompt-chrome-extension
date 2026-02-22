@@ -32,7 +32,8 @@ const formFields = [
   "location",
   "host",
   "registration_link",
-  "cost"
+  "cost",
+  "source_url"
 ];
 
 let isDark = true;
@@ -79,10 +80,10 @@ async function onAuthButtonClick() {
   await signInWithGoogle();
 }
 
-async function onCapture() {
-  flashCamera();
-  await delay(FLASH_BEFORE_LOADING_MS);
-  showLoading();
+
+  try {
+    const response = await sendMessage({ type: "CAPTURE_EVENT" });
+    setCaptureEnabled(true);
 
   chrome.runtime.sendMessage({ type: "CAPTURE_EVENT" }, (response) => {
     if (!response) {
@@ -106,19 +107,29 @@ async function onCapture() {
       return;
     }
 
-    const event = data.event || {};
-    if (!event.timezone) {
-      event.timezone = "America/Los_Angeles";
+    updateStatus("Done.");
+    currentEvent = data.event || {};
+
+    if (!currentEvent.timezone) {
+      currentEvent.timezone = DEFAULT_TIMEZONE;
     }
-    fillForm(event);
-    showScreen("result");
-    revertCamera();
-  });
-}
+
+    if (!currentEvent.source_url && response?.meta?.source_url) {
+      currentEvent.source_url = response.meta.source_url;
+    }
+
+    fillForm(currentEvent);
+    eventSection.classList.remove("hidden");
+  } catch (err) {
+    setCaptureEnabled(true);
+    updateStatus(`Error: ${err.message || err}`);
+    eventSection.classList.add("hidden");
+  }
+});
 
 async function onSaveEvent() {
   const eventData = readForm();
-  if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
+  if (!eventData.timezone) eventData.timezone = DEFAULT_TIMEZONE;
 
   const sourceUrl = await getActiveTabUrl();
   const newEvent = {
@@ -129,9 +140,54 @@ async function onSaveEvent() {
   };
 
   const { events } = await chrome.storage.local.get("events");
-  const next = Array.isArray(events) ? events : [];
-  next.unshift(newEvent);
-  await chrome.storage.local.set({ events: next });
+  const nextEvents = Array.isArray(events) ? events : [];
+  nextEvents.unshift(localEvent);
+  await chrome.storage.local.set({ events: nextEvents });
+
+  renderEventsList(nextEvents);
+  updateStatus("Event saved locally. Syncing...");
+
+  const syncResult = await sendMessage({ type: "SYNC_EVENT", event: localEvent });
+
+  if (syncResult?.ok) {
+    const updatedEvents = nextEvents.map((event) => {
+      if (event.id !== localEvent.id) return event;
+      return {
+        ...event,
+        cloud_event_id: syncResult.data?.id || null,
+        cloud_synced_at: new Date().toISOString(),
+        sync_error: null
+      };
+    });
+
+    await chrome.storage.local.set({ events: updatedEvents });
+    renderEventsList(updatedEvents);
+    updateStatus("Event saved and synced to dashboard.");
+    return;
+  }
+
+  const errorMessage = syncResult?.error || "Unknown sync error";
+  const updatedEvents = nextEvents.map((event) => {
+    if (event.id !== localEvent.id) return event;
+    return {
+      ...event,
+      sync_error: errorMessage
+    };
+  });
+
+  await chrome.storage.local.set({ events: updatedEvents });
+  renderEventsList(updatedEvents);
+
+  if (errorMessage.toLowerCase().includes("not signed in")) {
+    updateStatus("Event saved locally. Sign in with Google to sync.");
+  } else if (errorMessage.toLowerCase().includes("missing supabase config")) {
+    updateStatus("Event saved locally. Save Supabase config to enable sync.");
+  } else if (errorMessage.toLowerCase().includes("local dashboard")) {
+    updateStatus("Event saved locally. Check local dashboard URL and make sure dashboard is running.");
+  } else {
+    updateStatus(`Event saved locally. Sync failed: ${errorMessage}`);
+  }
+});
 
   renderEventsList(next);
 
@@ -152,28 +208,24 @@ async function onSaveEvent() {
   showScreen("idle");
 }
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function updateKeyStatus(saved) {
+  keyStatus.textContent = saved ? "Key saved" : "Key not saved";
 }
 
-function showScreen(name) {
-  document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
-  document.getElementById(`screen-${name}`).classList.add("active");
+function updateSupabaseConfigStatus(saved) {
+  supabaseConfigStatus.textContent = saved
+    ? "Supabase config saved"
+    : "Supabase config not saved";
 }
 
-function showLoading() {
-  showScreen("loading");
-  const pb = document.getElementById("pbar");
-  pb.style.animation = "none";
-  pb.offsetHeight;
-  pb.style.animation = "";
+function updateLocalDashboardStatus(saved) {
+  localDashboardStatus.textContent = saved
+    ? "Local dashboard URL saved"
+    : "Local dashboard URL not saved";
+}
 
-  document.getElementById("step1").className = "step done";
-  document.getElementById("step1").querySelector(".step-icon").textContent = "✓";
-  document.getElementById("step2").className = "step active";
-  document.getElementById("step2").querySelector(".step-icon").innerHTML = '<div class="spinner"></div>';
-  document.getElementById("step3").className = "step";
-  document.getElementById("step3").querySelector(".step-icon").textContent = "○";
+function updateStatus(text) {
+  statusEl.textContent = text;
 }
 
 function flashCamera() {
@@ -230,6 +282,20 @@ function renderEventsList(events) {
     title.className = "saved-title";
     title.textContent = ev.title || "(Untitled Event)";
 
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const startLabel = ev.start_datetime || "No start time";
+    const syncLabel = ev.cloud_synced_at
+      ? "Synced"
+      : ev.sync_error
+        ? "Sync failed"
+        : "Local only";
+
+    meta.textContent = `${startLabel} • ${syncLabel}`;
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
     const date = document.createElement("div");
     date.className = "saved-date";
     date.textContent = ev.start_datetime || "No start time";
@@ -244,11 +310,25 @@ function renderEventsList(events) {
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", async () => {
       const { events } = await chrome.storage.local.get("events");
-      const next = (events || []).filter((eventItem) => eventItem.id !== ev.id);
+      const next = (events || []).filter((event) => event.id !== ev.id);
       await chrome.storage.local.set({ events: next });
       renderEventsList(next);
     });
 
+    actions.appendChild(exportBtn);
+    actions.appendChild(deleteBtn);
+
+    item.appendChild(title);
+    item.appendChild(meta);
+
+    if (ev.sync_error) {
+      const syncError = document.createElement("div");
+      syncError.className = "status-muted";
+      syncError.textContent = `Last sync error: ${ev.sync_error}`;
+      item.appendChild(syncError);
+    }
+
+    item.appendChild(actions);
     info.appendChild(title);
     info.appendChild(date);
     item.appendChild(dot);
@@ -357,7 +437,24 @@ function escapeICS(text) {
 }
 
 function sanitizeFilename(name) {
-  return (name || "event").replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase() || "event";
+  return (
+    (name || "event")
+      .replace(/[^a-z0-9_-]+/gi, "_")
+      .replace(/^_+|_+$/g, "")
+      .toLowerCase() || "event"
+  );
+}
+
+function sendMessage(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
 }
 
 function assertSupabaseConfig() {
