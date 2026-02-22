@@ -6,6 +6,8 @@ const AUTH_CONFIG = {
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY
 };
+const AUTH_REQUEST_TIMEOUT_MS = 130000;
+const DEFAULT_MESSAGE_TIMEOUT_MS = 15000;
 
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
@@ -453,9 +455,14 @@ async function signInWithGoogle() {
 
   try {
     assertSupabaseConfig();
+    const redirectUrl = chrome.identity.getRedirectURL("supabase-auth");
     const response = await sendRuntimeMessage({
       type: "AUTH_SIGN_IN",
       config: AUTH_CONFIG
+    }, {
+      timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+      timeoutMessage:
+        `Google sign-in timed out waiting for the OAuth redirect. In Supabase Auth settings, add this exact redirect URL and retry: ${redirectUrl}`
     });
     if (!response?.ok) {
       throw new Error(response?.error || "Could not sign in with Google.");
@@ -506,9 +513,23 @@ async function fetchAuthSession() {
   return normalizeSession(response.session);
 }
 
-function sendRuntimeMessage(message) {
+function sendRuntimeMessage(message, options = {}) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutMs =
+      typeof options?.timeoutMs === "number" && options.timeoutMs > 0 ? options.timeoutMs : DEFAULT_MESSAGE_TIMEOUT_MS;
+    const timeoutMessage = options?.timeoutMessage || "Timed out waiting for extension response.";
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
     chrome.runtime.sendMessage(message, (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+
       const lastErr = chrome.runtime.lastError;
       if (lastErr) {
         reject(new Error(lastErr.message || "Extension message failed."));
