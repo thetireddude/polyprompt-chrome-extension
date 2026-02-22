@@ -219,15 +219,24 @@ body {
   bottom: 66px;
   left: 50%;
   transform: translateX(-50%) translateY(calc(100% + 24px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   background: var(--green);
   color: #0a1a0f;
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
   border-radius: 99px;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, opacity 0.3s ease, visibility 0s linear 0.3s;
 }
-.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
 
 body.light {
   --bg: #f5f5f7;

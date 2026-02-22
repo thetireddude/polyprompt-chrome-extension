@@ -35,6 +35,7 @@ const formFields = [
 
 let isDark = true;
 let cameraRevertTimer = null;
+let toastTimer = null;
 let authSession = null;
 let authBusy = false;
 const FLASH_BEFORE_LOADING_MS = 650;
@@ -262,9 +263,18 @@ function renderEventsList(events) {
 }
 
 function showToast(msg) {
+  if (toastTimer) clearTimeout(toastTimer);
   toastEl.textContent = msg;
   toastEl.classList.add("show");
-  setTimeout(() => toastEl.classList.remove("show"), 2600);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.remove("show");
+    toastTimer = null;
+    setTimeout(() => {
+      if (!toastEl.classList.contains("show")) {
+        toastEl.textContent = "";
+      }
+    }, 350);
+  }, 2600);
 }
 
 function toggleTheme() {
