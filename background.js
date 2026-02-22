@@ -1,6 +1,4 @@
-﻿importScripts("vendor/supabase.js");
-
-const OPENAI_API_KEY = "YOUR_API_KEY";
+﻿const OPENAI_API_KEY = "YOUR_API_KEY";
 
 /*
   EventSnap Background Service Worker (MV3)
@@ -12,110 +10,265 @@ const OPENAI_API_KEY = "YOUR_API_KEY";
 */
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
-const MODEL_NAME = "gpt-4.1-mini"; // Reasonable default; can be changed later
-const SUPABASE_CLIENTS = new Map();
-const SUPABASE_STORAGE_PREFIX = "eventsnap_supabase_auth:";
-const OAUTH_FLOW_TIMEOUT_MS = 120000;
+const MODEL_NAME = "gpt-4.1-mini";
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+const STORAGE_KEYS = {
+  openaiKey: "openai_api_key",
+  supabaseUrl: "supabase_url",
+  supabaseAnonKey: "supabase_anon_key",
+  localDashboardUrl: "local_dashboard_url",
+  supabaseSession: "supabase_session",
+  supabaseUser: "supabase_user"
+};
+
+const LOCAL_DEV_USER = {
+  id: "local-dev-user",
+  email: "local@eventsnap.dev"
+};
+
+const LOCAL_DASHBOARD_DISCOVERY_PORT_MIN = 1;
+const LOCAL_DASHBOARD_DISCOVERY_PORT_MAX = 65535;
+const LOCAL_DASHBOARD_DISCOVERY_BATCH_SIZE = 48;
+const LOCAL_DASHBOARD_DISCOVERY_TIMEOUT_MS = 250;
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const LOOPBACK_DISCOVERY_HOSTS = ["localhost", "127.0.0.1"];
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || !message.type) return;
 
-  if (message.type === "CAPTURE_EVENT") {
-    // Keep the message channel open for async work.
-    (async () => {
-      try {
-        if (!OPENAI_API_KEY || OPENAI_API_KEY === "YOUR_OPENAI_API_KEY_HERE") {
-          throw new Error("Missing OpenAI API key. Please set OPENAI_API_KEY in background.js.");
-        }
+  (async () => {
+    switch (message.type) {
+      case "CAPTURE_EVENT":
+        sendResponse(await handleCaptureEvent());
+        break;
+      case "AUTH_LOGIN":
+        sendResponse(await handleAuthLogin());
+        break;
+      case "AUTH_LOGOUT":
+        sendResponse(await handleAuthLogout());
+        break;
+      case "AUTH_STATUS":
+        sendResponse(await handleAuthStatus());
+        break;
+      case "SYNC_EVENT":
+        sendResponse(await handleSyncEvent(message.event));
+        break;
+      default:
+        sendResponse({ ok: false, error: `Unsupported message type: ${message.type}` });
+    }
+  })().catch((err) => {
+    const msg = err && err.message ? err.message : String(err);
+    sendResponse({ ok: false, error: msg });
+  });
 
-        // Capture the currently visible tab as JPEG (quality ~50).
-        const dataUrl = await chrome.tabs.captureVisibleTab(null, {
-          format: "jpeg",
-          quality: 50
-        });
-
-        if (!dataUrl || !dataUrl.startsWith("data:image")) {
-          sendResponse({ ok: false, error: "Failed to capture screenshot." });
-          return;
-        }
-
-        // Send to OpenAI Responses API with image input.
-        const responseJson = await callOpenAI(OPENAI_API_KEY, dataUrl);
-
-        // Extract JSON string from the response payload.
-        const outputText = extractOutputText(responseJson);
-        if (!outputText) {
-          sendResponse({ ok: false, error: "No output text returned by OpenAI." });
-          return;
-        }
-
-        let parsed;
-        try {
-          parsed = JSON.parse(outputText);
-        } catch (err) {
-          sendResponse({
-            ok: false,
-            error: "OpenAI returned invalid JSON.",
-            details: outputText
-          });
-          return;
-        }
-
-        sendResponse({ ok: true, data: parsed });
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        sendResponse({ ok: false, error: msg });
-      }
-    })();
-
-    return true; // Required to signal async response
-  }
-
-  if (message.type === "AUTH_SIGN_IN") {
-    (async () => {
-      try {
-        const config = message.config || {};
-        const session = await signInWithGoogle(config);
-        sendResponse({ ok: true, session });
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        sendResponse({ ok: false, error: msg });
-      }
-    })();
-
-    return true;
-  }
-
-  if (message.type === "AUTH_GET_SESSION") {
-    (async () => {
-      try {
-        const config = message.config || {};
-        const session = await getCurrentSession(config);
-        sendResponse({ ok: true, session });
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        sendResponse({ ok: false, error: msg });
-      }
-    })();
-
-    return true;
-  }
-
-  if (message.type === "AUTH_SIGN_OUT") {
-    (async () => {
-      try {
-        const config = message.config || {};
-        await signOut(config);
-        sendResponse({ ok: true });
-      } catch (err) {
-        const msg = err && err.message ? err.message : String(err);
-        sendResponse({ ok: false, error: msg });
-      }
-    })();
-
-    return true;
-  }
+  return true;
 });
+
+async function handleCaptureEvent() {
+  const { [STORAGE_KEYS.openaiKey]: openaiApiKey } = await chrome.storage.local.get(STORAGE_KEYS.openaiKey);
+  if (!openaiApiKey) {
+    return { ok: false, error: "Missing OpenAI API key. Please save a key first." };
+  }
+
+  const sourceUrl = await getActiveTabUrl();
+
+  const dataUrl = await chrome.tabs.captureVisibleTab(null, {
+    format: "jpeg",
+    quality: 50
+  });
+
+  if (!dataUrl || !dataUrl.startsWith("data:image")) {
+    return { ok: false, error: "Failed to capture screenshot." };
+  }
+
+  const responseJson = await callOpenAI(openaiApiKey, dataUrl);
+  const outputText = extractOutputText(responseJson);
+
+  if (!outputText) {
+    return { ok: false, error: "No output text returned by OpenAI." };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(outputText);
+  } catch (_err) {
+    return {
+      ok: false,
+      error: "OpenAI returned invalid JSON.",
+      details: outputText
+    };
+  }
+
+  if (parsed?.event && !parsed.event.timezone) {
+    parsed.event.timezone = DEFAULT_TIMEZONE;
+  }
+
+  if (parsed?.event && sourceUrl) {
+    parsed.event.source_url = sourceUrl;
+  }
+
+  return { ok: true, data: parsed, meta: { source_url: sourceUrl || null } };
+}
+
+async function handleAuthLogin() {
+  const localDashboardUrl = await getLocalDashboardUrl();
+  if (await shouldUseLocalDashboardMode(localDashboardUrl)) {
+    return buildLocalAuthState(localDashboardUrl);
+  }
+
+  const config = await getSupabaseConfig();
+  const redirectUrl = chrome.identity.getRedirectURL("supabase-auth");
+
+  const authUrl =
+    `${config.url}/auth/v1/authorize` +
+    `?provider=google` +
+    `&redirect_to=${encodeURIComponent(redirectUrl)}` +
+    `&response_type=token` +
+    `&prompt=select_account`;
+
+  const redirected = await launchWebAuthFlow({
+    url: authUrl,
+    interactive: true
+  });
+
+  const tokenParts = parseFragmentParams(redirected);
+  if (!tokenParts.access_token) {
+    throw new Error("No access token returned from OAuth.");
+  }
+
+  const expiresIn = Number(tokenParts.expires_in || 3600);
+  const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+
+  const session = {
+    access_token: tokenParts.access_token,
+    refresh_token: tokenParts.refresh_token || null,
+    token_type: tokenParts.token_type || "bearer",
+    expires_at: expiresAt
+  };
+
+  const user = await fetchSupabaseUser(config, session.access_token);
+
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.supabaseSession]: session,
+    [STORAGE_KEYS.supabaseUser]: user
+  });
+
+  return {
+    ok: true,
+    authenticated: true,
+    user: {
+      id: user.id,
+      email: user.email || ""
+    }
+  };
+}
+
+async function handleAuthLogout() {
+  const localDashboardUrl = await getLocalDashboardUrl();
+  if (await shouldUseLocalDashboardMode(localDashboardUrl)) {
+    return buildLocalAuthState(localDashboardUrl);
+  }
+
+  await chrome.storage.local.remove([STORAGE_KEYS.supabaseSession, STORAGE_KEYS.supabaseUser]);
+  return { ok: true, authenticated: false };
+}
+
+async function handleAuthStatus() {
+  const localDashboardUrl = await getLocalDashboardUrl();
+  if (await shouldUseLocalDashboardMode(localDashboardUrl)) {
+    return buildLocalAuthState(localDashboardUrl);
+  }
+
+  try {
+    const { user } = await getValidSupabaseContext({ requireSession: false });
+    if (!user) {
+      return { ok: true, authenticated: false };
+    }
+
+    return {
+      ok: true,
+      authenticated: true,
+      user: {
+        id: user.id,
+        email: user.email || ""
+      }
+    };
+  } catch (_err) {
+    await chrome.storage.local.remove([STORAGE_KEYS.supabaseSession, STORAGE_KEYS.supabaseUser]);
+    return { ok: true, authenticated: false };
+  }
+}
+
+async function handleSyncEvent(event) {
+  if (!event || typeof event !== "object") {
+    return { ok: false, error: "Missing event payload." };
+  }
+
+  const localDashboardUrl = await getLocalDashboardUrl();
+  if (await shouldUseLocalDashboardMode(localDashboardUrl)) {
+    return await syncEventToLocalDashboard(localDashboardUrl, event);
+  }
+
+  const { config, session, user } = await getValidSupabaseContext({ requireSession: true });
+  const payload = normalizeEventForSync(event, user.id);
+
+  const endpoint = `${config.url}/rest/v1/events?on_conflict=user_id,client_event_id`;
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=representation"
+    },
+    body: JSON.stringify([payload])
+  });
+
+  if (!resp.ok) {
+    const details = await safeReadErrorResponse(resp);
+    return { ok: false, error: `Sync failed (${resp.status}): ${details}` };
+  }
+
+  const rows = await resp.json();
+  return {
+    ok: true,
+    data: rows && rows.length ? rows[0] : null
+  };
+}
+
+async function syncEventToLocalDashboard(localDashboardUrl, event) {
+  const endpoint = `${localDashboardUrl}/api/local/events`;
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ event })
+  });
+
+  if (!resp.ok) {
+    const details = await safeReadErrorResponse(resp);
+    return { ok: false, error: `Local dashboard sync failed (${resp.status}): ${details}` };
+  }
+
+  const json = await resp.json();
+  if (json?.ok === false) {
+    return { ok: false, error: json?.error || "Local dashboard rejected the event." };
+  }
+
+  return {
+    ok: true,
+    data: json?.data || null,
+    localMode: true
+  };
+}
+
+async function getActiveTabUrl() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = tabs?.[0]?.url;
+  return typeof url === "string" ? url : null;
+}
 
 async function callOpenAI(apiKey, dataUrl) {
   const systemPrompt = buildSystemPrompt();
@@ -204,254 +357,436 @@ function extractOutputText(responseJson) {
   return "";
 }
 
-function assertSupabaseConfig(config) {
-  const url = config?.supabaseUrl;
-  const key = config?.supabaseAnonKey;
+async function getSupabaseConfig() {
+  const {
+    [STORAGE_KEYS.supabaseUrl]: rawUrl,
+    [STORAGE_KEYS.supabaseAnonKey]: anonKey
+  } = await chrome.storage.local.get([STORAGE_KEYS.supabaseUrl, STORAGE_KEYS.supabaseAnonKey]);
 
-  if (!url || !key || String(url).includes("YOUR_PROJECT_REF") || String(key).includes("YOUR_SUPABASE")) {
-    throw new Error("Set supabaseUrl and supabaseAnonKey in popup.config.local.js before using Google login.");
+  const url = sanitizeSupabaseUrl(rawUrl);
+  const key = sanitizeSupabaseAnonKey(anonKey);
+  if (!url || !key) {
+    throw new Error("Missing Supabase config. Save Supabase URL and anon key in the popup first.");
   }
+
+  return { url, anonKey: key };
 }
 
-function assertSupabaseLibrary() {
-  if (typeof globalThis.supabase?.createClient !== "function") {
-    throw new Error("Supabase client library is missing. Ensure vendor/supabase.js is bundled with the extension.");
+async function hasSupabaseConfig() {
+  const {
+    [STORAGE_KEYS.supabaseUrl]: rawUrl,
+    [STORAGE_KEYS.supabaseAnonKey]: anonKey
+  } = await chrome.storage.local.get([STORAGE_KEYS.supabaseUrl, STORAGE_KEYS.supabaseAnonKey]);
+
+  return Boolean(sanitizeSupabaseUrl(rawUrl) && sanitizeSupabaseAnonKey(anonKey));
+}
+
+async function shouldUseLocalDashboardMode(localDashboardUrl) {
+  if (!localDashboardUrl) return false;
+  if (await hasSupabaseConfig()) return false;
+  return true;
+}
+
+async function getLocalDashboardUrl() {
+  const { [STORAGE_KEYS.localDashboardUrl]: rawUrl } = await chrome.storage.local.get(
+    STORAGE_KEYS.localDashboardUrl
+  );
+  const normalized = sanitizeLocalDashboardUrl(rawUrl);
+  if (!normalized) return null;
+
+  const parsed = parseUrlSafe(normalized);
+  if (!parsed || !isLoopbackHost(parsed.hostname)) {
+    return normalized;
   }
+
+  if (await canReachLocalDashboard(normalized)) {
+    return normalized;
+  }
+
+  const preferredPort = Number(parsed.port);
+  const discovered = await discoverLocalDashboardUrl({
+    protocol: parsed.protocol,
+    preferredHost: parsed.hostname,
+    preferredPort: isValidPort(preferredPort) ? preferredPort : null
+  });
+
+  if (discovered && discovered !== normalized) {
+    await chrome.storage.local.set({ [STORAGE_KEYS.localDashboardUrl]: discovered });
+    return discovered;
+  }
+
+  return normalized;
 }
 
-function getProjectRef(supabaseUrl) {
-  const host = new URL(String(supabaseUrl)).hostname;
-  return host.split(".")[0] || "project";
+function sanitizeSupabaseUrl(value) {
+  if (!value) return "";
+  return String(value).trim().replace(/\/+$/, "");
 }
 
-function createChromeStorageAdapter(namespace) {
-  const toKey = (key) => `${namespace}${key}`;
+function sanitizeSupabaseAnonKey(value) {
+  if (!value) return "";
+  return String(value).trim();
+}
 
+function sanitizeLocalDashboardUrl(value) {
+  if (!value) return "";
+  const normalized = String(value).trim().replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(normalized)) return "";
+  return normalized;
+}
+
+function buildLocalAuthState(localDashboardUrl) {
   return {
-    async getItem(key) {
-      const namespacedKey = toKey(key);
-      const result = await chrome.storage.local.get([namespacedKey]);
-      return result[namespacedKey] ?? null;
-    },
-    async setItem(key, value) {
-      const namespacedKey = toKey(key);
-      await chrome.storage.local.set({ [namespacedKey]: value });
-    },
-    async removeItem(key) {
-      const namespacedKey = toKey(key);
-      await chrome.storage.local.remove(namespacedKey);
-    }
+    ok: true,
+    authenticated: true,
+    localMode: true,
+    localDashboardUrl,
+    user: LOCAL_DEV_USER
   };
 }
 
-function getSupabaseClient(config) {
-  assertSupabaseConfig(config);
-  assertSupabaseLibrary();
+async function discoverLocalDashboardUrl({ protocol, preferredHost, preferredPort }) {
+  const protocols = buildLocalDashboardProtocolCandidates(protocol);
+  const hosts = buildLocalDashboardHostCandidates(preferredHost);
+  const ports = await buildLocalDashboardPortCandidates(preferredPort);
 
-  const cacheKey = `${config.supabaseUrl}|${config.supabaseAnonKey}`;
-  if (SUPABASE_CLIENTS.has(cacheKey)) {
-    return SUPABASE_CLIENTS.get(cacheKey);
+  const preferredCandidates = buildLocalDashboardUrlCandidates({ protocols, hosts, ports });
+  const preferredMatch = await findReachableLocalDashboardUrl(preferredCandidates);
+  if (preferredMatch) {
+    return preferredMatch;
   }
 
-  const projectRef = getProjectRef(config.supabaseUrl);
-  const namespace = `${SUPABASE_STORAGE_PREFIX}${projectRef}:`;
-  const storage = createChromeStorageAdapter(namespace);
-
-  const client = globalThis.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: {
-      flowType: "pkce",
-      detectSessionInUrl: false,
-      persistSession: true,
-      autoRefreshToken: true,
-      storage,
-      storageKey: `${projectRef}-auth-token`
-    }
+  const scanProtocols = protocols.includes("http:") ? ["http:"] : protocols;
+  return await scanLocalDashboardPorts({
+    protocols: scanProtocols,
+    hosts,
+    excludedPorts: new Set(ports)
   });
-
-  SUPABASE_CLIENTS.set(cacheKey, client);
-  return client;
 }
 
-async function signInWithGoogle(config) {
-  const supabase = getSupabaseClient(config);
-  const redirectTo = chrome.identity.getRedirectURL("supabase-auth");
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true,
-      queryParams: {
-        prompt: "select_account"
+function buildLocalDashboardProtocolCandidates(preferredProtocol) {
+  const normalized = String(preferredProtocol || "").toLowerCase() === "https:" ? "https:" : "http:";
+  return normalized === "https:" ? ["https:", "http:"] : ["http:"];
+}
+
+function buildLocalDashboardHostCandidates(preferredHost) {
+  const hosts = [];
+  const normalized = String(preferredHost || "").toLowerCase();
+
+  if (LOOPBACK_DISCOVERY_HOSTS.includes(normalized)) {
+    hosts.push(normalized);
+  }
+
+  for (const host of LOOPBACK_DISCOVERY_HOSTS) {
+    if (!hosts.includes(host)) {
+      hosts.push(host);
+    }
+  }
+
+  return hosts;
+}
+
+async function buildLocalDashboardPortCandidates(preferredPort) {
+  const ports = [];
+
+  if (isValidPort(preferredPort)) {
+    ports.push(preferredPort);
+  }
+
+  const tabPorts = await readLoopbackPortsFromTabs();
+  for (const port of tabPorts) {
+    if (!ports.includes(port)) {
+      ports.push(port);
+    }
+  }
+
+  return ports;
+}
+
+async function readLoopbackPortsFromTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const ports = [];
+
+    for (const tab of tabs) {
+      const parsed = parseUrlSafe(tab?.url);
+      if (!parsed || !isLoopbackHost(parsed.hostname)) {
+        continue;
+      }
+
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        continue;
+      }
+
+      const port = parsed.port ? Number(parsed.port) : parsed.protocol === "https:" ? 443 : 80;
+      if (isValidPort(port) && !ports.includes(port)) {
+        ports.push(port);
       }
     }
-  });
 
-  if (error) {
-    throw new Error(error.message || "Could not start Google sign-in.");
+    return ports;
+  } catch (_err) {
+    return [];
   }
-  if (!data?.url) {
-    throw new Error("Supabase did not return an OAuth URL.");
-  }
-
-  const callbackUrl = await launchWebAuthFlowWithTimeout({
-    url: data.url,
-    interactive: true,
-    timeoutMs: OAUTH_FLOW_TIMEOUT_MS,
-    expectedRedirectPrefix: redirectTo
-  });
-
-  if (!callbackUrl.startsWith(redirectTo)) {
-    throw new Error(`Unexpected OAuth redirect URL. Expected it to start with ${redirectTo}.`);
-  }
-
-  await completeAuthCallback(supabase, callbackUrl);
-
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession();
-
-  if (sessionError) {
-    throw new Error(sessionError.message || "Could not load authenticated session.");
-  }
-  if (!session) {
-    throw new Error("Could not create an authenticated session.");
-  }
-
-  if (!session.user) {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) {
-      throw new Error(userError.message || "Could not load account profile.");
-    }
-    return { ...session, user: userData?.user || null };
-  }
-
-  return session;
 }
 
-function launchWebAuthFlowWithTimeout({ url, interactive, timeoutMs, expectedRedirectPrefix }) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const safeResolve = (value) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      resolve(value);
-    };
-    const safeReject = (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-      reject(error);
-    };
+function buildLocalDashboardUrlCandidates({ protocols, hosts, ports }) {
+  const candidates = [];
 
-    const timeoutId = setTimeout(() => {
-      safeReject(
-        new Error(
-          `Google sign-in timed out waiting for the OAuth redirect. Add this exact redirect URL in Supabase Auth settings and retry: ${expectedRedirectPrefix}`
-        )
-      );
-    }, timeoutMs);
-
-    try {
-      chrome.identity.launchWebAuthFlow({ url, interactive }, (callbackUrl) => {
-        const runtimeError = chrome.runtime.lastError;
-        if (runtimeError) {
-          safeReject(new Error(runtimeError.message || "Google sign-in failed."));
-          return;
+  for (const protocolCandidate of protocols) {
+    for (const host of hosts) {
+      for (const port of ports) {
+        if (!isValidPort(port)) {
+          continue;
         }
-        if (!callbackUrl) {
-          safeReject(new Error("Google sign-in was cancelled."));
-          return;
-        }
-        safeResolve(callbackUrl);
-      });
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      safeReject(new Error(msg || "Google sign-in failed."));
+        candidates.push(`${protocolCandidate}//${host}:${port}`);
+      }
     }
-  });
+  }
+
+  return candidates;
 }
 
-async function completeAuthCallback(supabase, callbackUrl) {
-  const parsed = new URL(callbackUrl);
-  const queryParams = parsed.searchParams;
-  const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
-  const params = mergeSearchParams(queryParams, hashParams);
-
-  const providerError = params.get("error") || params.get("error_code");
-  const errorDescription = params.get("error_description");
-  if (providerError || errorDescription) {
-    throw new Error(errorDescription || providerError || "Google authentication failed.");
-  }
-
-  const code = params.get("code");
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      throw new Error(error.message || "Could not exchange auth code for a session.");
-    }
-    return;
-  }
-
-  const accessToken = params.get("access_token");
-  const refreshToken = params.get("refresh_token");
-  if (!accessToken || !refreshToken) {
-    throw new Error("No auth code returned and no fallback token pair was provided.");
-  }
-
-  const { error } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken
-  });
-  if (error) {
-    throw new Error(error.message || "Could not finalize sign-in session.");
-  }
-}
-
-function mergeSearchParams(searchParams, hashParams) {
-  const merged = new URLSearchParams();
-  for (const [key, value] of searchParams.entries()) {
-    merged.set(key, value);
-  }
-  for (const [key, value] of hashParams.entries()) {
-    merged.set(key, value);
-  }
-  return merged;
-}
-
-async function getCurrentSession(config) {
-  const supabase = getSupabaseClient(config);
-  const {
-    data: { session },
-    error
-  } = await supabase.auth.getSession();
-
-  if (error) {
-    throw new Error(error.message || "Could not read auth session.");
-  }
-
-  if (!session) {
+async function findReachableLocalDashboardUrl(
+  candidates,
+  { batchSize = LOCAL_DASHBOARD_DISCOVERY_BATCH_SIZE } = {}
+) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
     return null;
   }
 
-  if (!session.user) {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) {
-      throw new Error(userError.message || "Could not load account profile.");
-    }
+  for (let start = 0; start < candidates.length; start += batchSize) {
+    const batch = candidates.slice(start, start + batchSize);
+    const results = await Promise.all(
+      batch.map(async (candidate) => {
+        if (await canReachLocalDashboard(candidate)) {
+          return candidate;
+        }
+        return null;
+      })
+    );
 
-    return { ...session, user: userData?.user || null };
+    const match = results.find(Boolean);
+    if (match) {
+      return match;
+    }
   }
 
-  return session;
+  return null;
 }
 
-async function signOut(config) {
-  const supabase = getSupabaseClient(config);
-  const { error } = await supabase.auth.signOut();
+async function scanLocalDashboardPorts({ protocols, hosts, excludedPorts }) {
+  const ports = [];
 
-  if (error) {
-    throw new Error(error.message || "Could not sign out.");
+  for (let port = LOCAL_DASHBOARD_DISCOVERY_PORT_MIN; port <= LOCAL_DASHBOARD_DISCOVERY_PORT_MAX; port += 1) {
+    if (excludedPorts?.has(port)) {
+      continue;
+    }
+
+    ports.push(port);
+    if (ports.length < LOCAL_DASHBOARD_DISCOVERY_BATCH_SIZE) {
+      continue;
+    }
+
+    const match = await probeLocalDashboardPortBatch(protocols, hosts, ports);
+    if (match) {
+      return match;
+    }
+    ports.length = 0;
+  }
+
+  if (ports.length > 0) {
+    return await probeLocalDashboardPortBatch(protocols, hosts, ports);
+  }
+
+  return null;
+}
+
+async function probeLocalDashboardPortBatch(protocols, hosts, ports) {
+  const candidates = buildLocalDashboardUrlCandidates({
+    protocols,
+    hosts,
+    ports
+  });
+  return await findReachableLocalDashboardUrl(candidates, { batchSize: candidates.length });
+}
+
+function parseUrlSafe(value) {
+  try {
+    return new URL(value);
+  } catch (_err) {
+    return null;
+  }
+}
+
+function isValidPort(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function isLoopbackHost(hostname) {
+  return LOOPBACK_HOSTS.has(String(hostname || "").toLowerCase());
+}
+
+async function canReachLocalDashboard(baseUrl) {
+  const probeUrl = `${baseUrl}/api/local/events`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LOCAL_DASHBOARD_DISCOVERY_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(probeUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      },
+      signal: controller.signal
+    });
+
+    if (!resp.ok) return false;
+    const json = await resp.json();
+    return json?.ok === true && Array.isArray(json?.data);
+  } catch (_err) {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function launchWebAuthFlow(details) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(details, (redirectedTo) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!redirectedTo) {
+        reject(new Error("Authentication was cancelled."));
+        return;
+      }
+
+      resolve(redirectedTo);
+    });
+  });
+}
+
+function parseFragmentParams(url) {
+  const hashIndex = url.indexOf("#");
+  if (hashIndex === -1) return {};
+  const hashPart = url.slice(hashIndex + 1);
+  return Object.fromEntries(new URLSearchParams(hashPart).entries());
+}
+
+async function getValidSupabaseContext({ requireSession }) {
+  const config = await getSupabaseConfig();
+  const {
+    [STORAGE_KEYS.supabaseSession]: storedSession,
+    [STORAGE_KEYS.supabaseUser]: storedUser
+  } = await chrome.storage.local.get([STORAGE_KEYS.supabaseSession, STORAGE_KEYS.supabaseUser]);
+
+  if (!storedSession) {
+    if (requireSession) {
+      throw new Error("Not signed in to Supabase. Sign in with Google first.");
+    }
+    return { config, session: null, user: null };
+  }
+
+  let session = storedSession;
+  const now = Math.floor(Date.now() / 1000);
+  const shouldRefresh = !session.expires_at || session.expires_at <= now + 60;
+
+  if (shouldRefresh) {
+    if (!session.refresh_token) {
+      if (requireSession) {
+        throw new Error("Session expired and no refresh token is available. Please sign in again.");
+      }
+      return { config, session: null, user: null };
+    }
+
+    session = await refreshSupabaseSession(config, session.refresh_token);
+    await chrome.storage.local.set({ [STORAGE_KEYS.supabaseSession]: session });
+  }
+
+  let user = storedUser;
+  if (!user || !user.id) {
+    user = await fetchSupabaseUser(config, session.access_token);
+    await chrome.storage.local.set({ [STORAGE_KEYS.supabaseUser]: user });
+  }
+
+  return { config, session, user };
+}
+
+async function refreshSupabaseSession(config, refreshToken) {
+  const endpoint = `${config.url}/auth/v1/token?grant_type=refresh_token`;
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      apikey: config.anonKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ refresh_token: refreshToken })
+  });
+
+  if (!resp.ok) {
+    const details = await safeReadErrorResponse(resp);
+    throw new Error(`Supabase session refresh failed (${resp.status}): ${details}`);
+  }
+
+  const json = await resp.json();
+  const expiresIn = Number(json.expires_in || 3600);
+
+  return {
+    access_token: json.access_token,
+    refresh_token: json.refresh_token || refreshToken,
+    token_type: json.token_type || "bearer",
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn
+  };
+}
+
+async function fetchSupabaseUser(config, accessToken) {
+  const endpoint = `${config.url}/auth/v1/user`;
+  const resp = await fetch(endpoint, {
+    method: "GET",
+    headers: {
+      apikey: config.anonKey,
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!resp.ok) {
+    const details = await safeReadErrorResponse(resp);
+    throw new Error(`Failed to fetch Supabase user (${resp.status}): ${details}`);
+  }
+
+  return await resp.json();
+}
+
+function normalizeEventForSync(event, userId) {
+  return {
+    user_id: userId,
+    client_event_id: sanitizeString(event.id) || String(Date.now()),
+    title: sanitizeString(event.title),
+    start_datetime: sanitizeString(event.start_datetime),
+    end_datetime: sanitizeString(event.end_datetime),
+    timezone: sanitizeString(event.timezone) || DEFAULT_TIMEZONE,
+    location: sanitizeString(event.location),
+    host: sanitizeString(event.host),
+    registration_link: sanitizeString(event.registration_link),
+    cost: sanitizeString(event.cost),
+    source_url: sanitizeString(event.source_url)
+  };
+}
+
+function sanitizeString(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
+async function safeReadErrorResponse(resp) {
+  try {
+    const json = await resp.json();
+    return json?.error?.message || JSON.stringify(json);
+  } catch (_err) {
+    return await resp.text();
   }
 }

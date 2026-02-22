@@ -1,13 +1,31 @@
-const RUNTIME_CONFIG = globalThis.EVENTSNAP_CONFIG || {};
-const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl || "https://YOUR_PROJECT_REF.supabase.co";
-const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey || "YOUR_SUPABASE_PUBLISHABLE_KEY";
-const DASHBOARD_URL = buildDashboardUrl(RUNTIME_CONFIG.dashboardUrl);
-const AUTH_CONFIG = {
-  supabaseUrl: SUPABASE_URL,
-  supabaseAnonKey: SUPABASE_ANON_KEY
-};
-const AUTH_REQUEST_TIMEOUT_MS = 130000;
-const DEFAULT_MESSAGE_TIMEOUT_MS = 15000;
+/*
+  EventSnap Popup Script
+  - Handles OpenAI and Supabase config storage
+  - Supports local dashboard sync for local development
+  - Authenticates with Supabase (Google OAuth via background)
+  - Triggers screenshot capture via background service worker
+  - Saves events locally and auto-syncs to Supabase
+  - Exports ICS files client-side
+*/
+
+const DEFAULT_TIMEZONE = "America/Los_Angeles";
+
+const apiKeyInput = document.getElementById("apiKeyInput");
+const saveKeyBtn = document.getElementById("saveKeyBtn");
+const keyStatus = document.getElementById("keyStatus");
+
+const supabaseUrlInput = document.getElementById("supabaseUrlInput");
+const supabaseAnonKeyInput = document.getElementById("supabaseAnonKeyInput");
+const saveSupabaseBtn = document.getElementById("saveSupabaseBtn");
+const supabaseConfigStatus = document.getElementById("supabaseConfigStatus");
+
+const localDashboardUrlInput = document.getElementById("localDashboardUrlInput");
+const saveLocalDashboardBtn = document.getElementById("saveLocalDashboardBtn");
+const localDashboardStatus = document.getElementById("localDashboardStatus");
+
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const authStatus = document.getElementById("authStatus");
 
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
@@ -18,11 +36,7 @@ const toastEl = document.getElementById("toast");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const savedEventsBtn = document.getElementById("saved-events-btn");
 const backBtn = document.getElementById("back-btn");
-const loginBtn = document.getElementById("google-login-btn");
-const authStatusEl = document.getElementById("auth-status");
-const greetingEl = document.getElementById("greeting");
-const greetingNameEl = document.getElementById("greeting-name");
-const avatarEl = document.getElementById("user-avatar");
+const loginBtn = document.getElementById("simulate-login-btn");
 
 const formFields = [
   "title",
@@ -36,49 +50,116 @@ const formFields = [
   "source_url"
 ];
 
-let isDark = true;
-let cameraRevertTimer = null;
-let authSession = null;
-let authBusy = false;
-const FLASH_BEFORE_LOADING_MS = 650;
+let currentEvent = null;
+let authState = {
+  authenticated: false,
+  user: null
+};
 
 init();
 
 async function init() {
-  wireHandlers();
-  await hydrateAuthSession();
+  const { openai_api_key, supabase_url, supabase_anon_key, local_dashboard_url, events } = await chrome.storage.local.get([
+    "openai_api_key",
+    "supabase_url",
+    "supabase_anon_key",
+    "local_dashboard_url",
+    "events"
+  ]);
 
-  if (isSignedIn()) {
-    const recentLoad = await loadRecentEventsFromSupabase({ silent: true });
-    if (recentLoad.ok) {
-      return;
-    }
-  }
+  updateKeyStatus(!!openai_api_key);
 
-  const { events } = await chrome.storage.local.get(["events"]);
+  if (supabase_url) supabaseUrlInput.value = supabase_url;
+  if (supabase_anon_key) supabaseAnonKeyInput.value = supabase_anon_key;
+  updateSupabaseConfigStatus(Boolean(supabase_url && supabase_anon_key));
+
+  if (local_dashboard_url) localDashboardUrlInput.value = local_dashboard_url;
+  updateLocalDashboardStatus(Boolean(local_dashboard_url));
+
   renderEventsList(events || []);
+  await refreshAuthStatus();
 }
 
-function wireHandlers() {
-  captureBtn.addEventListener("click", onCapture);
-  saveEventBtn.addEventListener("click", onSaveEvent);
-  exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
-  themeToggleBtn.addEventListener("click", toggleTheme);
-  savedEventsBtn.addEventListener("click", () => showScreen("idle"));
-  backBtn.addEventListener("click", () => showScreen("idle"));
-  loginBtn.addEventListener("click", onAuthButtonClick);
-}
-
-async function onAuthButtonClick() {
-  if (authBusy) return;
-
-  if (isSignedIn()) {
-    await openDashboard();
+saveKeyBtn.addEventListener("click", async () => {
+  const key = apiKeyInput.value.trim();
+  if (!key) {
+    updateStatus("Please enter an OpenAI key.");
     return;
   }
 
-  await signInWithGoogle();
-}
+  await chrome.storage.local.set({ openai_api_key: key });
+  apiKeyInput.value = "";
+  updateKeyStatus(true);
+  updateStatus("OpenAI key saved.");
+});
+
+saveSupabaseBtn.addEventListener("click", async () => {
+  const url = supabaseUrlInput.value.trim().replace(/\/+$/, "");
+  const anonKey = supabaseAnonKeyInput.value.trim();
+
+  if (!url || !anonKey) {
+    updateStatus("Enter Supabase URL and anon key.");
+    return;
+  }
+
+  await chrome.storage.local.set({
+    supabase_url: url,
+    supabase_anon_key: anonKey
+  });
+
+  updateSupabaseConfigStatus(true);
+  updateStatus("Supabase config saved.");
+});
+
+saveLocalDashboardBtn.addEventListener("click", async () => {
+  const url = localDashboardUrlInput.value.trim().replace(/\/+$/, "");
+  if (!url) {
+    await chrome.storage.local.remove("local_dashboard_url");
+    updateLocalDashboardStatus(false);
+    updateStatus("Local dashboard URL cleared.");
+    await refreshAuthStatus();
+    return;
+  }
+
+  await chrome.storage.local.set({ local_dashboard_url: url });
+  updateLocalDashboardStatus(true);
+  updateStatus(
+    "Local dashboard URL saved. Extension uses this bridge only when Supabase config is missing and will auto-recover if the port changes."
+  );
+  await refreshAuthStatus();
+});
+
+loginBtn.addEventListener("click", async () => {
+  try {
+    loginBtn.disabled = true;
+    updateStatus("Opening Google sign-in...");
+
+    const response = await sendMessage({ type: "AUTH_LOGIN" });
+    if (!response?.ok) {
+      throw new Error(response?.error || "Sign-in failed.");
+    }
+
+    await refreshAuthStatus();
+    updateStatus("Signed in. New events will auto-sync.");
+  } catch (err) {
+    updateStatus(`Sign-in error: ${err.message || err}`);
+  } finally {
+    if (!authState.authenticated) {
+      loginBtn.disabled = false;
+    }
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  const response = await sendMessage({ type: "AUTH_LOGOUT" });
+  if (!response?.ok) {
+    updateStatus(`Sign-out error: ${response?.error || "Unknown error"}`);
+    return;
+  }
+
+  await refreshAuthStatus();
+  updateStatus("Signed out. Events stay local until you sign in again.");
+});
 
 
   try {
@@ -131,11 +212,11 @@ async function onSaveEvent() {
   const eventData = readForm();
   if (!eventData.timezone) eventData.timezone = DEFAULT_TIMEZONE;
 
-  const sourceUrl = await getActiveTabUrl();
-  const newEvent = {
-    id: typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : String(Date.now()),
+  const localEvent = {
+    id: String(Date.now()),
     created_at: new Date().toISOString(),
-    source_url: sourceUrl,
+    cloud_synced_at: null,
+    sync_error: null,
     ...eventData
   };
 
@@ -189,23 +270,45 @@ async function onSaveEvent() {
   }
 });
 
-  renderEventsList(next);
+exportIcsBtn.addEventListener("click", () => {
+  const eventData = readForm();
+  if (!eventData.timezone) eventData.timezone = DEFAULT_TIMEZONE;
+  exportICS(eventData, eventData.title || "event");
+});
 
-  if (!isSignedIn()) {
-    showToast("Saved locally. Log In With Google to sync.");
-    showScreen("idle");
+async function refreshAuthStatus() {
+  const response = await sendMessage({ type: "AUTH_STATUS" });
+
+  if (response?.ok && response.authenticated) {
+    authState = {
+      authenticated: true,
+      user: response.user || null
+    };
+
+    if (response.localMode) {
+      if (response.localDashboardUrl) {
+        localDashboardUrlInput.value = response.localDashboardUrl;
+        updateLocalDashboardStatus(true);
+      }
+
+      authStatus.textContent = response.localDashboardUrl
+        ? `Local dashboard mode enabled (${response.localDashboardUrl})`
+        : "Local dashboard mode enabled";
+      loginBtn.disabled = true;
+      logoutBtn.disabled = true;
+      return;
+    }
+
+    authStatus.textContent = `Signed in as ${response.user?.email || "user"}`;
+    loginBtn.disabled = true;
+    logoutBtn.disabled = false;
     return;
   }
 
-  const syncResult = await syncEventToSupabase(newEvent);
-  if (!syncResult.ok) {
-    showToast(`Saved locally. Sync failed: ${syncResult.error}`);
-    showScreen("idle");
-    return;
-  }
-
-  showToast("✓ Event saved and synced.");
-  showScreen("idle");
+  authState = { authenticated: false, user: null };
+  authStatus.textContent = "Not signed in";
+  loginBtn.disabled = false;
+  logoutBtn.disabled = true;
 }
 
 function updateKeyStatus(saved) {
@@ -339,18 +442,6 @@ function renderEventsList(events) {
   }
 }
 
-function showToast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  setTimeout(() => toastEl.classList.remove("show"), 2600);
-}
-
-function toggleTheme() {
-  isDark = !isDark;
-  document.body.classList.toggle("light", !isDark);
-  themeToggleBtn.textContent = isDark ? "☀️" : "🌙";
-}
-
 function exportICS(eventData, filenameBase) {
   if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
   const ics = buildICS(eventData);
@@ -455,410 +546,4 @@ function sendMessage(message) {
       resolve(response);
     });
   });
-}
-
-function assertSupabaseConfig() {
-  if (
-    !SUPABASE_URL ||
-    !SUPABASE_ANON_KEY ||
-    SUPABASE_URL.includes("YOUR_PROJECT_REF") ||
-    SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")
-  ) {
-    throw new Error("Set supabaseUrl and supabaseAnonKey in popup.config.local.js before using Google login.");
-  }
-}
-
-function isSignedIn() {
-  return Boolean(authSession?.access_token && authSession?.user);
-}
-
-function setAuthBusy(nextBusy) {
-  authBusy = nextBusy;
-  updateAuthUI();
-}
-
-function setAuthSession(nextSession) {
-  authSession = nextSession;
-  updateAuthUI();
-}
-
-function updateAuthUI() {
-  if (authBusy) {
-    loginBtn.disabled = true;
-    loginBtn.textContent = isSignedIn() ? "Working..." : "Connecting...";
-  } else if (isSignedIn()) {
-    loginBtn.disabled = false;
-    loginBtn.textContent = "Go to Dashboard";
-  } else {
-    loginBtn.disabled = false;
-    loginBtn.textContent = "Log into Google";
-  }
-
-  if (isSignedIn()) {
-    const user = authSession.user;
-    const name = getDisplayName(user);
-    const label = user.email ? `Signed in as ${user.email}` : "Signed in";
-    authStatusEl.textContent = label;
-    greetingNameEl.textContent = name;
-    greetingEl.classList.add("visible");
-    avatarEl.textContent = getInitials(name);
-    avatarEl.classList.add("visible");
-    return;
-  }
-
-  authStatusEl.textContent = "Not signed in. Log in to sync events to your dashboard.";
-  greetingNameEl.textContent = "there";
-  greetingEl.classList.remove("visible");
-  avatarEl.classList.remove("visible");
-  avatarEl.textContent = "";
-}
-
-function getDisplayName(user) {
-  if (!user) return "there";
-  const metadata = user.user_metadata || {};
-  const fallback =
-    metadata.display_name || metadata.full_name || metadata.name || metadata.user_name || user.email || "there";
-  const firstWord = String(fallback).trim().split(/\s+/)[0];
-  return firstWord || "there";
-}
-
-function getInitials(name) {
-  const parts = String(name || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
-
-  if (!parts.length) return "?";
-  return parts.map((part) => part[0].toUpperCase()).join("");
-}
-
-async function hydrateAuthSession() {
-  setAuthBusy(true);
-
-  try {
-    const session = await fetchAuthSession();
-    setAuthSession(session);
-  } catch (err) {
-    console.warn("Failed to hydrate auth session:", err);
-    setAuthSession(null);
-  } finally {
-    setAuthBusy(false);
-  }
-}
-
-async function signInWithGoogle() {
-  setAuthBusy(true);
-
-  try {
-    assertSupabaseConfig();
-    const redirectUrl = chrome.identity.getRedirectURL("supabase-auth");
-    const response = await sendRuntimeMessage({
-      type: "AUTH_SIGN_IN",
-      config: AUTH_CONFIG
-    }, {
-      timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
-      timeoutMessage:
-        `Google sign-in timed out waiting for the OAuth redirect. In Supabase Auth settings, add this exact redirect URL and retry: ${redirectUrl}`
-    });
-    if (!response?.ok) {
-      throw new Error(response?.error || "Could not sign in with Google.");
-    }
-
-    const session = normalizeSession(response.session);
-    if (!session) {
-      throw new Error("Could not create an authenticated session.");
-    }
-
-    setAuthSession(session);
-    const recentLoad = await loadRecentEventsFromSupabase({ silent: true });
-    showScreen("idle");
-
-    const signedInLabel = session.user?.email || getDisplayName(session.user);
-    if (!recentLoad.ok) {
-      showToast(`Signed in as ${signedInLabel}. Could not load recent events.`);
-      return;
-    }
-
-    showToast(`✓ Signed in as ${signedInLabel}`);
-  } catch (err) {
-    showToast(`Sign-in failed: ${extractErrorMessage(err, "Could not sign in with Google.")}`);
-  } finally {
-    setAuthBusy(false);
-  }
-}
-
-async function openDashboard() {
-  try {
-    await chrome.tabs.create({ url: DASHBOARD_URL });
-  } catch (err) {
-    showToast(`Could not open dashboard: ${extractErrorMessage(err, "Unknown error.")}`);
-  }
-}
-
-async function fetchAuthSession() {
-  assertSupabaseConfig();
-
-  const response = await sendRuntimeMessage({
-    type: "AUTH_GET_SESSION",
-    config: AUTH_CONFIG
-  });
-  if (!response?.ok) {
-    throw new Error(response?.error || "Could not load auth session.");
-  }
-
-  return normalizeSession(response.session);
-}
-
-function sendRuntimeMessage(message, options = {}) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timeoutMs =
-      typeof options?.timeoutMs === "number" && options.timeoutMs > 0 ? options.timeoutMs : DEFAULT_MESSAGE_TIMEOUT_MS;
-    const timeoutMessage = options?.timeoutMessage || "Timed out waiting for extension response.";
-    const timeoutId = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(timeoutMessage));
-    }, timeoutMs);
-
-    chrome.runtime.sendMessage(message, (response) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeoutId);
-
-      const lastErr = chrome.runtime.lastError;
-      if (lastErr) {
-        reject(new Error(lastErr.message || "Extension message failed."));
-        return;
-      }
-
-      resolve(response);
-    });
-  });
-}
-
-async function signOut() {
-  setAuthBusy(true);
-
-  try {
-    if (authSession?.access_token) {
-      const response = await sendRuntimeMessage({
-        type: "AUTH_SIGN_OUT",
-        config: AUTH_CONFIG
-      });
-      if (!response?.ok) {
-        throw new Error(response?.error || "Could not sign out.");
-      }
-    }
-  } catch (_err) {
-    // We still clear UI state even if server logout fails.
-  } finally {
-    setAuthSession(null);
-    setAuthBusy(false);
-    showToast("Signed out.");
-  }
-}
-
-function normalizeSession(raw) {
-  if (!raw || !raw.access_token) return null;
-
-  const expiresIn = Number(raw.expires_in || 0);
-  const explicitExpiresAt = Number(raw.expires_at || 0);
-  const fallbackExpiresAt = Math.floor(Date.now() / 1000) + (expiresIn > 0 ? expiresIn : 3600);
-
-  return {
-    access_token: raw.access_token,
-    refresh_token: raw.refresh_token || null,
-    token_type: raw.token_type || "bearer",
-    expires_in: expiresIn > 0 ? expiresIn : 3600,
-    expires_at: explicitExpiresAt > 0 ? explicitExpiresAt : fallbackExpiresAt,
-    user: raw.user || null
-  };
-}
-
-async function loadRecentEventsFromSupabase({ silent = false } = {}) {
-  const session = await getSyncSession();
-  if (!session || !session.user?.id) {
-    return { ok: false, error: "Not signed in." };
-  }
-
-  try {
-    return await fetchRecentEvents(session, true, silent);
-  } catch (err) {
-    const error = extractErrorMessage(err, "Could not load recent events.");
-    if (!silent) showToast(error);
-    return { ok: false, error };
-  }
-}
-
-async function fetchRecentEvents(session, allowReloadRetry, silent) {
-  const params = new URLSearchParams({
-    select: "id,title,start_datetime,end_datetime,timezone,location,host,registration_link,cost,source_url,created_at",
-    user_id: `eq.${session.user.id}`,
-    order: "created_at.desc",
-    limit: "3"
-  });
-
-  const { response, payload } = await fetchSupabase(`/rest/v1/events?${params.toString()}`, {
-    method: "GET",
-    accessToken: session.access_token
-  });
-
-  if (response.status === 401 && allowReloadRetry) {
-    const latest = await getSyncSession();
-    if (!latest) {
-      return { ok: false, error: "Session expired. Please log in again." };
-    }
-
-    return fetchRecentEvents(latest, false, silent);
-  }
-
-  if (!response.ok) {
-    const error = extractApiMessage(payload, `Could not load recent events (${response.status}).`);
-    if (!silent) showToast(error);
-    return { ok: false, error };
-  }
-
-  const events = Array.isArray(payload) ? payload : [];
-  await chrome.storage.local.set({ events });
-  renderEventsList(events);
-  return { ok: true, data: events };
-}
-
-async function syncEventToSupabase(localEvent) {
-  const session = await getSyncSession();
-  if (!session || !session.user?.id) {
-    return { ok: false, error: "Not signed in." };
-  }
-
-  const payload = {
-    user_id: session.user.id,
-    title: cleanNullable(localEvent.title),
-    start_datetime: cleanNullable(localEvent.start_datetime),
-    end_datetime: cleanNullable(localEvent.end_datetime),
-    timezone: cleanNullable(localEvent.timezone) || "America/Los_Angeles",
-    location: cleanNullable(localEvent.location),
-    host: cleanNullable(localEvent.host),
-    registration_link: cleanNullable(localEvent.registration_link),
-    cost: cleanNullable(localEvent.cost),
-    source_url: cleanNullable(localEvent.source_url)
-  };
-
-  return insertEvent(payload, session, true);
-}
-
-async function insertEvent(payload, session, allowReloadRetry) {
-  const { response, payload: responsePayload } = await fetchSupabase("/rest/v1/events?select=id", {
-    method: "POST",
-    accessToken: session.access_token,
-    body: [payload],
-    headers: {
-      Prefer: "return=representation"
-    }
-  });
-
-  if (response.status === 401 && allowReloadRetry) {
-    const latest = await getSyncSession();
-    if (!latest) {
-      return { ok: false, error: "Session expired. Please log in again." };
-    }
-
-    return insertEvent(payload, latest, false);
-  }
-
-  if (!response.ok) {
-    return { ok: false, error: extractApiMessage(responsePayload, `Sync failed (${response.status}).`) };
-  }
-
-  return { ok: true, data: Array.isArray(responsePayload) ? responsePayload[0] : responsePayload };
-}
-
-async function getSyncSession() {
-  try {
-    const session = await fetchAuthSession();
-    setAuthSession(session);
-    return session;
-  } catch (_err) {
-    setAuthSession(null);
-    return null;
-  }
-}
-
-async function fetchSupabase(path, { method = "GET", body, accessToken, headers = {} } = {}) {
-  assertSupabaseConfig();
-
-  const requestHeaders = {
-    apikey: SUPABASE_ANON_KEY,
-    ...headers
-  };
-
-  if (accessToken) {
-    requestHeaders.Authorization = `Bearer ${accessToken}`;
-  }
-
-  if (body !== undefined) {
-    requestHeaders["Content-Type"] = "application/json";
-  }
-
-  const response = await fetch(`${SUPABASE_URL}${path}`, {
-    method,
-    headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
-
-  const payload = await readJsonSafe(response);
-  return { response, payload };
-}
-
-async function readJsonSafe(response) {
-  const text = await response.text();
-  if (!text) return null;
-
-  try {
-    return JSON.parse(text);
-  } catch (_err) {
-    return { message: text };
-  }
-}
-
-function extractApiMessage(payload, fallback) {
-  if (!payload) return fallback;
-  return payload.message || payload.msg || payload.error_description || payload.error || fallback;
-}
-
-function extractErrorMessage(err, fallback) {
-  if (!err) return fallback;
-  if (typeof err === "string") return err;
-  return err.message || fallback;
-}
-
-function cleanNullable(value) {
-  if (value == null) return null;
-  const trimmed = String(value).trim();
-  return trimmed || null;
-}
-
-async function getActiveTabUrl() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!Array.isArray(tabs) || !tabs.length) return null;
-
-  const tabUrl = tabs[0]?.url;
-  if (!tabUrl || !/^https?:/i.test(tabUrl)) return null;
-  return tabUrl;
-}
-
-function buildDashboardUrl(rawUrl) {
-  const fallback = "http://localhost:3000/dashboard";
-  if (!rawUrl) return fallback;
-
-  try {
-    const url = new URL(String(rawUrl));
-    if (!url.pathname || url.pathname === "/") {
-      url.pathname = "/dashboard";
-    }
-    return url.toString();
-  } catch (_err) {
-    return fallback;
-  }
 }

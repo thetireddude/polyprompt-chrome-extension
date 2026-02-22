@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "EventSnap",
-  "version": "0.1.0",
-  "description": "Capture visible tab screenshots and extract event details using OpenAI.",
-  "permissions": ["activeTab", "storage", "identity", "tabs"],
-  "host_permissions": ["https://api.openai.com/*", "https://*.supabase.co/*"],
+  "version": "0.2.0",
+  "description": "Capture visible tab screenshots, extract event details, and sync to Supabase.",
+  "permissions": ["activeTab", "tabs", "storage", "identity"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://*.supabase.co/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
