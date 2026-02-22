@@ -17,6 +17,8 @@ const themeToggleBtn = document.getElementById("theme-toggle");
 const savedEventsBtn = document.getElementById("saved-events-btn");
 const backBtn = document.getElementById("back-btn");
 const loginBtn = document.getElementById("google-login-btn");
+const loginBtnLabel = document.getElementById("google-login-label");
+const dashboardBtn = document.getElementById("go-dashboard-btn");
 const authStatusEl = document.getElementById("auth-status");
 const greetingEl = document.getElementById("greeting");
 const greetingNameEl = document.getElementById("greeting-name");
@@ -65,6 +67,7 @@ function wireHandlers() {
   savedEventsBtn.addEventListener("click", () => showScreen("idle"));
   backBtn.addEventListener("click", () => showScreen("idle"));
   loginBtn.addEventListener("click", onAuthButtonClick);
+  dashboardBtn.addEventListener("click", onDashboardButtonClick);
 }
 
 async function onAuthButtonClick() {
@@ -400,14 +403,20 @@ function setAuthSession(nextSession) {
 function updateAuthUI() {
   if (authBusy) {
     loginBtn.disabled = true;
-    loginBtn.textContent = isSignedIn() ? "Working..." : "Connecting...";
+    loginBtnLabel.textContent = isSignedIn() ? "Working..." : "Connecting...";
+    dashboardBtn.disabled = true;
   } else if (isSignedIn()) {
-    loginBtn.disabled = false;
-    loginBtn.textContent = "Refresh Events";
+    loginBtn.disabled = true;
+    loginBtnLabel.textContent = "Log into Google";
+    dashboardBtn.disabled = false;
   } else {
     loginBtn.disabled = false;
-    loginBtn.textContent = "Log into Google";
+    loginBtnLabel.textContent = "Log into Google";
+    dashboardBtn.disabled = true;
   }
+
+  loginBtn.style.display = isSignedIn() ? "none" : "inline-flex";
+  dashboardBtn.style.display = isSignedIn() ? "inline-flex" : "none";
 
   if (isSignedIn()) {
     const user = authSession.user;
@@ -426,6 +435,15 @@ function updateAuthUI() {
   greetingEl.classList.remove("visible");
   avatarEl.classList.remove("visible");
   avatarEl.textContent = "";
+}
+
+async function onDashboardButtonClick() {
+  if (!String(RUNTIME_CONFIG.dashboardUrl || "").trim()) {
+    showToast("Dashboard URL not configured");
+    return;
+  }
+
+  await openDashboard();
 }
 
 function getDisplayName(user) {

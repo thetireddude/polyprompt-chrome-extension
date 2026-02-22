@@ -113,7 +113,11 @@
 
     <div class="auth-footer">
       <div class="auth-status" id="auth-status">Not signed in. Log in to sync events to your dashboard.</div>
-      <button class="google-btn auth-btn" id="google-login-btn">Log into Google</button>
+      <button class="google-btn auth-btn" id="google-login-btn">
+        <span class="g-icon" aria-hidden="true">G</span>
+        <span id="google-login-label">Log into Google</span>
+      </button>
+      <button class="dashboard-btn auth-btn" id="go-dashboard-btn">Go to Dashboard</button>
     </div>
 
     <div class="toast" id="toast"></div>
