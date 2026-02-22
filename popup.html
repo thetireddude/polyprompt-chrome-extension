@@ -20,14 +20,6 @@
     </div>
 
     <div class="screen active" id="screen-idle">
-      <div class="signin-banner" id="signin-banner">
-        <div class="signin-text">
-          <p><strong>Save & sync events</strong></p>
-          <p>Sign in to keep your events across sessions.</p>
-        </div>
-        <button class="google-btn" id="simulate-login-btn">Sign in</button>
-      </div>
-
       <div class="greeting" id="greeting">
         <p>Hello, <span id="greeting-name">there</span> 👋</p>
       </div>
@@ -200,8 +192,14 @@
       </div>
     </div>
 
+    <div class="auth-footer">
+      <div class="auth-status" id="auth-status">Not signed in. Log in to sync events to your dashboard.</div>
+      <button class="google-btn auth-btn" id="google-login-btn">Log into Google</button>
+    </div>
+
     <div class="toast" id="toast"></div>
 
+    <script src="popup.config.local.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
