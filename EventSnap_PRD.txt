@@ -1,0 +1,67 @@
+EventSnap – AI-Powered Event Capture Chrome Extension
+
+Project Overview:
+The goal of this project is to develop an AI-powered Chrome Extension that allows users to capture visible content on their browser screen and automatically extract structured event information. The system will analyze screenshots taken on-demand and determine whether event-related information is present. If detected, it will generate a structured event card containing key details such as title, date, time, location, and host.
+
+Clicking the “Capture Event” button takes a screenshot of the current visible browser tab using the Chrome API (`chrome.tabs.captureVisibleTab`). The extension then sends the screenshot to the OpenAI API using the Responses API (“responses” library / endpoint) and prompts the model to identify and return event details in a strict, structured format.
+
+The extension is designed primarily for college students who discover campus and off-campus events through Instagram posts, digital flyers, websites, and other online sources. By transforming unstructured visual content into structured calendar-ready entries, the system reduces friction in event tracking and improves event attendance and organization.
+
+Level:
+Medium
+
+Type of Project:
+AI Development, Chrome Extension Development, Computer Vision, Productivity Tool
+
+Skills Required:
+● HTML, CSS, JavaScript
+● Chrome Extension APIs (Manifest V3)
+● Background Service Workers
+● OpenAI API (Responses API) + Vision Inputs
+● Structured JSON prompting + validation
+● Calendar (ICS) File Generation
+● Local storage (chrome.storage.local)
+
+Key Features
+
+Milestone 1: On-Demand Screenshot Capture + AI Extraction
+● Screenshot Capture (User-Initiated):
+○ User clicks “Capture Event” in the extension popup.
+○ Capture the currently visible browser tab using `chrome.tabs.captureVisibleTab`.
+○ Compress the capture (JPEG) and convert to base64 for sending to the OpenAI API.
+○ No continuous monitoring; capture occurs only on click.
+
+● OpenAI Responses API Call:
+○ Send the base64 image to the OpenAI Responses API for vision analysis.
+○ Provide a strict prompt to:
+   - Decide if the screenshot contains an event announcement/invitation.
+   - If yes, extract event details and return them as JSON with ONLY the fields listed below.
+○ The model should NOT invent details. If uncertain, return null for that field.
+
+● Event Fields (MVP):
+- Title
+- Start date and time
+- End date and time (if available)
+- Timezone
+- Location
+- Host/Organizer
+- Registration link
+- Cost (if mentioned)
+
+Milestone 2: Event Display, Editing, Storage, and Calendar Export
+● Event Card Display (Popup UI):
+○ If an event is detected, display extracted fields in a clean card.
+○ Allow users to edit any field before saving.
+
+● Local Event Storage:
+○ Save structured event objects using `chrome.storage.local`.
+○ Do not store raw screenshots by default.
+
+● Calendar Export:
+○ Generate a downloadable ICS file for any saved event.
+○ Include DTSTART/DTEND when available and reasonable defaults when missing (documented in implementation).
+
+Client / Target User Information:
+The primary target users are university students who frequently browse social media and websites for event discovery. These users often encounter event information embedded in images or unstructured posts but lack a fast method to convert that information into structured calendar entries.
+
+The product aims to serve tech-savvy Chrome users initially.
