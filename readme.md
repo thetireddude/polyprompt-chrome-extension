@@ -124,8 +124,8 @@ We prioritize transparency, user agency, and responsible AI deployment.
 ## Team — Jason’s Jesters
 
 - **Tech Lead:** *Curren Sebastian*  
-- **Product Lead:** *Omar Mohamed*  
-- **Ethics Lead:** *Kylie Chao*  
+- **Product Lead:** *Omar Mohamed*, *Ammara Amin*
+- **Ethics Lead:** *Kylie Chao*, *Marine Hunanyan*  
 
 Built for Poly Prompt Hackathon 2026.
 
