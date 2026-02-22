@@ -28,13 +28,15 @@ const logoutBtn = document.getElementById("logoutBtn");
 const authStatus = document.getElementById("authStatus");
 
 const captureBtn = document.getElementById("captureBtn");
-const statusEl = document.getElementById("status");
-
-const eventSection = document.getElementById("eventSection");
 const saveEventBtn = document.getElementById("saveEventBtn");
 const exportIcsBtn = document.getElementById("exportIcsBtn");
-
 const eventsList = document.getElementById("eventsList");
+const toastEl = document.getElementById("toast");
+
+const themeToggleBtn = document.getElementById("theme-toggle");
+const savedEventsBtn = document.getElementById("saved-events-btn");
+const backBtn = document.getElementById("back-btn");
+const loginBtn = document.getElementById("simulate-login-btn");
 
 const formFields = [
   "title",
@@ -159,33 +161,30 @@ logoutBtn.addEventListener("click", async () => {
   updateStatus("Signed out. Events stay local until you sign in again.");
 });
 
-captureBtn.addEventListener("click", async () => {
-  updateStatus("Capturing...");
-  setCaptureEnabled(false);
 
   try {
     const response = await sendMessage({ type: "CAPTURE_EVENT" });
     setCaptureEnabled(true);
 
+  chrome.runtime.sendMessage({ type: "CAPTURE_EVENT" }, (response) => {
     if (!response) {
-      updateStatus("No response from background.");
+      showToast("No response from background");
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
     if (!response.ok) {
-      updateStatus(`Error: ${response.error}`);
-      if (response.details) {
-        console.warn("OpenAI details:", response.details);
-      }
-      eventSection.classList.add("hidden");
+      showToast(response.error || "Capture failed");
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
     const data = response.data;
     if (!data || data.is_event !== true) {
-      updateStatus("No event detected.");
-      eventSection.classList.add("hidden");
-      currentEvent = null;
+      showScreen("noevt");
+      revertCamera();
       return;
     }
 
@@ -209,7 +208,7 @@ captureBtn.addEventListener("click", async () => {
   }
 });
 
-saveEventBtn.addEventListener("click", async () => {
+async function onSaveEvent() {
   const eventData = readForm();
   if (!eventData.timezone) eventData.timezone = DEFAULT_TIMEZONE;
 
@@ -332,24 +331,34 @@ function updateStatus(text) {
   statusEl.textContent = text;
 }
 
-function setCaptureEnabled(enabled) {
-  captureBtn.disabled = !enabled;
-  captureBtn.textContent = enabled ? "Capture Event" : "Working...";
+function flashCamera() {
+  const icon = document.getElementById("btn-camera");
+  if (cameraRevertTimer) clearTimeout(cameraRevertTimer);
+  icon.textContent = "📸";
+  icon.classList.remove("flashing");
+  void icon.offsetWidth;
+  icon.classList.add("flashing");
+}
+
+function revertCamera() {
+  const icon = document.getElementById("btn-camera");
+  cameraRevertTimer = setTimeout(() => {
+    icon.classList.remove("flashing");
+    icon.textContent = "📷";
+  }, 2500);
 }
 
 function fillForm(eventData) {
   formFields.forEach((field) => {
-    const el = document.getElementById(field);
-    el.value = eventData[field] ?? "";
+    document.getElementById(field).value = eventData[field] ?? "";
   });
 }
 
 function readForm() {
   const result = {};
   formFields.forEach((field) => {
-    const el = document.getElementById(field);
-    const value = el.value.trim();
-    result[field] = value ? value : null;
+    const value = document.getElementById(field).value.trim();
+    result[field] = value || null;
   });
   return result;
 }
@@ -358,16 +367,22 @@ function renderEventsList(events) {
   eventsList.innerHTML = "";
 
   if (!events.length) {
-    eventsList.innerHTML = '<div class="status-muted">No saved events yet.</div>';
+    eventsList.innerHTML = '<div class="empty-state">No saved events yet.</div>';
     return;
   }
 
   for (const ev of events) {
     const item = document.createElement("div");
-    item.className = "list-item";
+    item.className = "saved-item";
+
+    const dot = document.createElement("div");
+    dot.className = "saved-dot";
+
+    const info = document.createElement("div");
+    info.className = "saved-info";
 
     const title = document.createElement("div");
-    title.className = "title";
+    title.className = "saved-title";
     title.textContent = ev.title || "(Untitled Event)";
 
     const meta = document.createElement("div");
@@ -384,12 +399,17 @@ function renderEventsList(events) {
 
     const actions = document.createElement("div");
     actions.className = "actions";
+    const date = document.createElement("div");
+    date.className = "saved-date";
+    date.textContent = ev.start_datetime || "No start time";
 
     const exportBtn = document.createElement("button");
-    exportBtn.textContent = "Export ICS";
+    exportBtn.className = "saved-export";
+    exportBtn.textContent = "↓ ICS";
     exportBtn.addEventListener("click", () => exportICS(ev, ev.title || "event"));
 
     const deleteBtn = document.createElement("button");
+    deleteBtn.className = "saved-delete";
     deleteBtn.textContent = "Delete";
     deleteBtn.addEventListener("click", async () => {
       const { events } = await chrome.storage.local.get("events");
@@ -412,11 +432,18 @@ function renderEventsList(events) {
     }
 
     item.appendChild(actions);
+    info.appendChild(title);
+    info.appendChild(date);
+    item.appendChild(dot);
+    item.appendChild(info);
+    item.appendChild(exportBtn);
+    item.appendChild(deleteBtn);
     eventsList.appendChild(item);
   }
 }
 
 function exportICS(eventData, filenameBase) {
+  if (!eventData.timezone) eventData.timezone = "America/Los_Angeles";
   const ics = buildICS(eventData);
   const blob = new Blob([ics], { type: "text/calendar" });
   const url = URL.createObjectURL(blob);
@@ -429,12 +456,12 @@ function exportICS(eventData, filenameBase) {
   a.remove();
 
   URL.revokeObjectURL(url);
+  showToast(`↓ ${sanitizeFilename(filenameBase)}.ics downloaded`);
 }
 
 function buildICS(eventData) {
   const now = new Date();
   const dtstamp = formatICSDateTimeUTC(now);
-
   const start = parseISO(eventData.start_datetime);
   let end = parseISO(eventData.end_datetime);
 
@@ -444,7 +471,6 @@ function buildICS(eventData) {
 
   const dtstart = start ? formatICSDateTimeUTC(start) : "";
   const dtend = end ? formatICSDateTimeUTC(end) : "";
-
   const summary = escapeICS(eventData.title || "Event");
   const location = escapeICS(eventData.location || "");
   const description = escapeICS(buildDescription(eventData));
@@ -452,9 +478,9 @@ function buildICS(eventData) {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//EventSnap//EN",
+    "PRODID:-//PolySync//EN",
     "BEGIN:VEVENT",
-    `UID:${Date.now()}@eventsnap`,
+    `UID:${Date.now()}@polysync`,
     `DTSTAMP:${dtstamp}`
   ];
 
@@ -463,7 +489,6 @@ function buildICS(eventData) {
   lines.push(`SUMMARY:${summary}`);
   if (location) lines.push(`LOCATION:${location}`);
   if (description) lines.push(`DESCRIPTION:${description}`);
-
   lines.push("END:VEVENT", "END:VCALENDAR");
 
   return lines.join("\r\n");
@@ -499,11 +524,7 @@ function formatICSDateTimeUTC(date) {
 }
 
 function escapeICS(text) {
-  return text
-    .replace(/\\/g, "\\\\")
-    .replace(/\n/g, "\\n")
-    .replace(/,/g, "\\,")
-    .replace(/;/g, "\\;");
+  return text.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
 
 function sanitizeFilename(name) {

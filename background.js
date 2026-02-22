@@ -1,3 +1,5 @@
+﻿const OPENAI_API_KEY = "YOUR_API_KEY";
+
 /*
   EventSnap Background Service Worker (MV3)
   - Captures visible tab screenshot on demand
