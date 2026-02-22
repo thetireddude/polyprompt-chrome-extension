@@ -11,14 +11,16 @@ const DEFAULT_MESSAGE_TIMEOUT_MS = 15000;
 
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
+const cancelEventBtn = document.getElementById("cancel-event-btn");
 const exportIcsBtn = document.getElementById("exportIcsBtn");
 const eventsList = document.getElementById("eventsList");
 const toastEl = document.getElementById("toast");
 
 const themeToggleBtn = document.getElementById("theme-toggle");
-const savedEventsBtn = document.getElementById("saved-events-btn");
 const backBtn = document.getElementById("back-btn");
 const loginBtn = document.getElementById("google-login-btn");
+const loginBtnLabel = document.getElementById("google-login-label");
+const dashboardBtn = document.getElementById("go-dashboard-btn");
 const authStatusEl = document.getElementById("auth-status");
 const greetingEl = document.getElementById("greeting");
 const greetingNameEl = document.getElementById("greeting-name");
@@ -37,6 +39,7 @@ const formFields = [
 
 let isDark = true;
 let cameraRevertTimer = null;
+let toastTimer = null;
 let authSession = null;
 let authBusy = false;
 const FLASH_BEFORE_LOADING_MS = 650;
@@ -61,18 +64,22 @@ async function init() {
 function wireHandlers() {
   captureBtn.addEventListener("click", onCapture);
   saveEventBtn.addEventListener("click", onSaveEvent);
+  cancelEventBtn.addEventListener("click", onCancelEvent);
   exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
   themeToggleBtn.addEventListener("click", toggleTheme);
-  savedEventsBtn.addEventListener("click", () => showScreen("idle"));
   backBtn.addEventListener("click", () => showScreen("idle"));
   loginBtn.addEventListener("click", onAuthButtonClick);
+  dashboardBtn.addEventListener("click", onDashboardButtonClick);
 }
 
 async function onAuthButtonClick() {
   if (authBusy) return;
 
   if (isSignedIn()) {
-    await openDashboard();
+    const result = await loadRecentEventsFromSupabase({ silent: false });
+    if (result?.ok) {
+      showToast("✓ Events refreshed");
+    }
     return;
   }
 
@@ -148,7 +155,12 @@ async function onSaveEvent() {
     return;
   }
 
+  await loadRecentEventsFromSupabase({ silent: true });
   showToast("✓ Event saved and synced.");
+  showScreen("idle");
+}
+
+function onCancelEvent() {
   showScreen("idle");
 }
 
@@ -195,14 +207,21 @@ function revertCamera() {
 
 function fillForm(eventData) {
   formFields.forEach((field) => {
-    document.getElementById(field).value = eventData[field] ?? "";
+    const input = document.getElementById(field);
+    if (!input) return;
+    input.value = eventData[field] ?? "";
   });
 }
 
 function readForm() {
   const result = {};
   formFields.forEach((field) => {
-    const value = document.getElementById(field).value.trim();
+    const input = document.getElementById(field);
+    if (!input) {
+      result[field] = null;
+      return;
+    }
+    const value = input.value.trim();
     result[field] = value || null;
   });
   return result;
@@ -260,9 +279,18 @@ function renderEventsList(events) {
 }
 
 function showToast(msg) {
+  if (toastTimer) clearTimeout(toastTimer);
   toastEl.textContent = msg;
   toastEl.classList.add("show");
-  setTimeout(() => toastEl.classList.remove("show"), 2600);
+  toastTimer = setTimeout(() => {
+    toastEl.classList.remove("show");
+    toastTimer = null;
+    setTimeout(() => {
+      if (!toastEl.classList.contains("show")) {
+        toastEl.textContent = "";
+      }
+    }, 350);
+  }, 2600);
 }
 
 function toggleTheme() {
@@ -388,14 +416,20 @@ function setAuthSession(nextSession) {
 function updateAuthUI() {
   if (authBusy) {
     loginBtn.disabled = true;
-    loginBtn.textContent = isSignedIn() ? "Working..." : "Connecting...";
+    loginBtnLabel.textContent = isSignedIn() ? "Working..." : "Connecting...";
+    dashboardBtn.disabled = true;
   } else if (isSignedIn()) {
-    loginBtn.disabled = false;
-    loginBtn.textContent = "Go to Dashboard";
+    loginBtn.disabled = true;
+    loginBtnLabel.textContent = "Log into Google";
+    dashboardBtn.disabled = false;
   } else {
     loginBtn.disabled = false;
-    loginBtn.textContent = "Log into Google";
+    loginBtnLabel.textContent = "Log into Google";
+    dashboardBtn.disabled = true;
   }
+
+  loginBtn.style.display = isSignedIn() ? "none" : "inline-flex";
+  dashboardBtn.style.display = isSignedIn() ? "inline-flex" : "none";
 
   if (isSignedIn()) {
     const user = authSession.user;
@@ -414,6 +448,15 @@ function updateAuthUI() {
   greetingEl.classList.remove("visible");
   avatarEl.classList.remove("visible");
   avatarEl.textContent = "";
+}
+
+async function onDashboardButtonClick() {
+  if (!String(RUNTIME_CONFIG.dashboardUrl || "").trim()) {
+    showToast("Dashboard URL not configured");
+    return;
+  }
+
+  await openDashboard();
 }
 
 function getDisplayName(user) {

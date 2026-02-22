@@ -70,9 +70,10 @@ body {
 }
 
 .idle-body { padding: 14px 20px 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.primary-pill,
 .capture-btn {
-  width: 100%;
-  padding: 14px;
+  height: 44px;
+  padding: 0 16px;
   border-radius: var(--radius);
   background: var(--cp-green);
   color: #f0f0f4;
@@ -80,6 +81,14 @@ body {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.capture-btn {
+  width: 100%;
 }
 .capture-btn:hover { background: #1a5c42; }
 .hint { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
@@ -96,7 +105,13 @@ body {
 .saved-date { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .saved-export { font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer; }
 .saved-delete { font-size: 11px; color: #f87171; background: none; border: none; cursor: pointer; }
-.empty-state { font-size: 12px; color: var(--muted); }
+.empty-state {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  display: block;
+  width: 100%;
+}
 
 .loading-body { padding: 48px 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .progress-track { width: 100%; height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
@@ -152,7 +167,10 @@ body {
   font-size: 12px;
   padding: 8px 10px;
 }
-.actions { display: flex; gap: 8px; margin-top: 14px; }
+.event-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.event-actions-row { display: flex; gap: 8px; }
+.event-actions-row--two button { flex: 1; }
+.event-actions-row--one button { width: 100%; }
 .btn-primary { flex: 1; padding: 11px; background: var(--accent); color: #fff; border: none; border-radius: 10px; cursor: pointer; }
 .btn-secondary { flex: 1; padding: 11px; background: transparent; color: var(--text); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 
@@ -161,19 +179,30 @@ body {
 .no-event-title { font-size: 16px; font-weight: 600; }
 .no-event-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
-.google-btn {
-  padding: 6px 11px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 500;
+.google-signin-btn {
+  height: 44px;
+  padding: 8px 18px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 28px;
+  color: #202124;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
 }
-.google-btn:disabled {
+.google-signin-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.g-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
 }
 
 .user-avatar {
@@ -213,21 +242,35 @@ body {
   min-width: 136px;
   text-align: center;
 }
+#go-dashboard-btn {
+  display: none;
+  min-width: 136px;
+}
 
 .toast {
   position: fixed;
   bottom: 66px;
   left: 50%;
   transform: translateX(-50%) translateY(calc(100% + 24px));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   background: var(--green);
   color: #0a1a0f;
   font-size: 13px;
+  text-align: center;
   font-weight: 600;
   padding: 8px 16px;
   border-radius: 99px;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s ease, opacity 0.3s ease, visibility 0s linear 0.3s;
 }
-.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
 
 body.light {
   --bg: #f5f5f7;

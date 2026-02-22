@@ -14,7 +14,6 @@
       </div>
       <div class="header-actions">
         <div class="user-avatar" id="user-avatar" title="Signed in"></div>
-        <button class="icon-btn" id="saved-events-btn" title="Saved events">☰</button>
         <button class="icon-btn" id="theme-toggle" title="Toggle light/dark mode">☀️</button>
       </div>
     </div>
@@ -69,32 +68,27 @@
               <input type="text" id="end_datetime" placeholder="2026-02-21T20:00:00" />
             </div>
           </div>
-          <div class="field-row">
-            <div class="field">
-              <label>Timezone</label>
-              <input type="text" id="timezone" placeholder="America/Los_Angeles" />
-            </div>
-            <div class="field">
-              <label>Cost</label>
-              <input type="text" id="cost" />
-            </div>
-          </div>
           <div class="field">
             <label>Location</label>
             <input type="text" id="location" />
           </div>
           <div class="field">
-            <label>Host</label>
+            <label>Event Organiser</label>
             <input type="text" id="host" />
           </div>
           <div class="field">
-            <label>Registration Link</label>
+            <label>Source URL</label>
             <input type="text" id="registration_link" />
           </div>
         </div>
-        <div class="actions">
-          <button class="btn-primary" id="saveEventBtn">Save Event</button>
-          <button class="btn-secondary" id="exportIcsBtn">↓ Export ICS</button>
+        <div class="event-actions">
+          <div class="event-actions-row event-actions-row--two">
+            <button class="btn-primary" id="saveEventBtn">Save Event</button>
+            <button class="btn-secondary" id="cancel-event-btn">Cancel</button>
+          </div>
+          <div class="event-actions-row event-actions-row--one">
+            <button class="btn-secondary" id="exportIcsBtn">↓ Export ICS</button>
+          </div>
         </div>
       </div>
     </div>
@@ -113,7 +107,11 @@
 
     <div class="auth-footer">
       <div class="auth-status" id="auth-status">Not signed in. Log in to sync events to your dashboard.</div>
-      <button class="google-btn auth-btn" id="google-login-btn">Log into Google</button>
+      <button class="google-signin-btn auth-btn" id="google-login-btn">
+        <img src="icons/Google__G__logo.svg" alt="" class="g-icon" aria-hidden="true" />
+        <span id="google-login-label">Sign in with Google</span>
+      </button>
+      <button class="primary-pill auth-btn" id="go-dashboard-btn">Go to Dashboard</button>
     </div>
 
     <div class="toast" id="toast"></div>
