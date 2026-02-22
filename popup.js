@@ -140,13 +140,17 @@ function flashCamera() {
   const icon = document.getElementById("btn-camera");
   if (cameraRevertTimer) clearTimeout(cameraRevertTimer);
   icon.textContent = "📸";
+  icon.classList.remove("flashing");
+  void icon.offsetWidth;
+  icon.classList.add("flashing");
 }
 
 function revertCamera() {
   const icon = document.getElementById("btn-camera");
   cameraRevertTimer = setTimeout(() => {
+    icon.classList.remove("flashing");
     icon.textContent = "📷";
-  }, 1500);
+  }, 2500);
 }
 
 function fillForm(eventData) {
