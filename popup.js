@@ -1,6 +1,6 @@
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
-const exportIcsBtn = document.getElementById("exportIcsBtn");
+const deleteEventBtn = document.getElementById("deleteEventBtn");
 const eventsList = document.getElementById("eventsList");
 const toastEl = document.getElementById("toast");
 
@@ -11,13 +11,13 @@ const loginBtn = document.getElementById("simulate-login-btn");
 
 const formFields = [
   "title",
-  "start_datetime",
-  "end_datetime",
-  "timezone",
+  "start_day",
+  "start_time",
+  "end_day",
+  "end_time",
   "location",
   "host",
-  "registration_link",
-  "cost"
+  "source_url"
 ];
 
 const MOCK_USER = { name: "Alex", initials: "AJ" };
@@ -36,7 +36,7 @@ async function init() {
 function wireHandlers() {
   captureBtn.addEventListener("click", onCapture);
   saveEventBtn.addEventListener("click", onSaveEvent);
-  exportIcsBtn.addEventListener("click", () => exportICS(readForm(), readForm().title || "event"));
+  deleteEventBtn.addEventListener("click", onDeleteEvent);
   themeToggleBtn.addEventListener("click", toggleTheme);
   savedEventsBtn.addEventListener("click", () => showScreen("idle"));
   backBtn.addEventListener("click", () => showScreen("idle"));
@@ -79,6 +79,15 @@ async function onCapture() {
     showScreen("result");
     revertCamera();
   });
+}
+
+
+function onDeleteEvent() {
+  formFields.forEach((field) => {
+    document.getElementById(field).value = "";
+  });
+  showToast("Event removed");
+  showScreen("idle");
 }
 
 async function onSaveEvent() {
@@ -143,8 +152,10 @@ function revertCamera() {
 }
 
 function fillForm(eventData) {
+  const split = splitDateTimeFields(eventData);
+  const merged = { ...eventData, ...split };
   formFields.forEach((field) => {
-    document.getElementById(field).value = eventData[field] ?? "";
+    document.getElementById(field).value = merged[field] ?? "";
   });
 }
 
@@ -154,7 +165,95 @@ function readForm() {
     const value = document.getElementById(field).value.trim();
     result[field] = value || null;
   });
-  return result;
+
+  const startDatetime = combineDayTime(result.start_day, result.start_time);
+  const endDatetime = combineDayTime(result.end_day, result.end_time);
+
+  return {
+    title: result.title,
+    start_datetime: startDatetime,
+    end_datetime: endDatetime,
+    timezone: "America/Los_Angeles",
+    location: result.location,
+    host: result.host,
+    source_url: result.source_url,
+    start_day: result.start_day,
+    start_time: result.start_time,
+    end_day: result.end_day,
+    end_time: result.end_time
+  };
+}
+
+function splitDateTimeFields(eventData) {
+  const start = splitIsoDateTime(eventData.start_datetime);
+  const end = splitIsoDateTime(eventData.end_datetime);
+  return {
+    start_day: start.day,
+    start_time: start.time,
+    end_day: end.day,
+    end_time: end.time
+  };
+}
+
+function splitIsoDateTime(value) {
+  if (!value) return { day: "", time: "" };
+  const raw = String(value).trim();
+  if (raw.includes("T")) {
+    const [day, timeRaw] = raw.split("T");
+    return { day: day || "", time: normalizeTime(timeRaw || "") };
+  }
+
+  const parsed = new Date(raw);
+  if (isNaN(parsed.getTime())) return { day: raw, time: "" };
+  const day = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+  const time = `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+  return { day, time };
+}
+
+function normalizeTime(value) {
+  const cleaned = value.replace(/Z$/, "").trim();
+  const ampm = cleaned.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
+  if (ampm) {
+    const hour = Number(ampm[1]) || 12;
+    return `${hour}:${ampm[2]} ${ampm[3].toUpperCase()}`;
+  }
+
+  const hhmm = cleaned.match(/^(\d{1,2}):(\d{2})/);
+  if (!hhmm) return cleaned;
+  const hour24 = Number(hhmm[1]);
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${hhmm[2]} ${period}`;
+}
+
+function parseTimeTo24Hour(time) {
+  const raw = (time || "").trim();
+  if (!raw) return "";
+
+  const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*([AP]M)$/i);
+  if (ampm) {
+    let hour = Number(ampm[1]);
+    const minute = ampm[2];
+    const period = ampm[3].toUpperCase();
+    if (period === "AM" && hour === 12) hour = 0;
+    if (period === "PM" && hour !== 12) hour += 12;
+    return `${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  const hhmm = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (hhmm) {
+    return `${String(Number(hhmm[1])).padStart(2, "0")}:${hhmm[2]}`;
+  }
+
+  return raw;
+}
+
+function combineDayTime(day, time) {
+  if (!day && !time) return null;
+  const normalizedTime = parseTimeTo24Hour(time);
+  if (!day) return normalizedTime || null;
+  if (!normalizedTime) return day;
+  return `${day}T${normalizedTime}:00`;
 }
 
 function renderEventsList(events) {
@@ -286,8 +385,7 @@ function buildICS(eventData) {
 function buildDescription(eventData) {
   const parts = [];
   if (eventData.host) parts.push(`Host: ${eventData.host}`);
-  if (eventData.registration_link) parts.push(`Registration: ${eventData.registration_link}`);
-  if (eventData.cost) parts.push(`Cost: ${eventData.cost}`);
+  if (eventData.source_url) parts.push(`Source URL: ${eventData.source_url}`);
   return parts.join("\\n");
 }
 
