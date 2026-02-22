@@ -1,4 +1,6 @@
-﻿/*
+﻿const OPENAI_API_KEY = "YOUR_API_KEY";
+
+/*
   EventSnap Background Service Worker (MV3)
   - Captures visible tab screenshot on demand
   - Calls OpenAI Responses API with image input
@@ -14,10 +16,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Keep the message channel open for async work.
   (async () => {
     try {
-      const { openai_api_key } = await chrome.storage.local.get("openai_api_key");
-      if (!openai_api_key) {
-        sendResponse({ ok: false, error: "Missing OpenAI API key. Please save a key first." });
-        return;
+      if (!OPENAI_API_KEY || OPENAI_API_KEY === "YOUR_OPENAI_API_KEY_HERE") {
+        throw new Error("Missing OpenAI API key. Please set OPENAI_API_KEY in background.js.");
       }
 
       // Capture the currently visible tab as JPEG (quality ~50).
@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       // Send to OpenAI Responses API with image input.
-      const responseJson = await callOpenAI(openai_api_key, dataUrl);
+      const responseJson = await callOpenAI(OPENAI_API_KEY, dataUrl);
 
       // Extract JSON string from the response payload.
       const outputText = extractOutputText(responseJson);
