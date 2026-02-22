@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PolySync</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f11;
+    --surface: #18181c;
+    --surface2: #222228;
+    --border: #2a2a32;
+    --accent: #C69214;
+    --accent-glow: rgba(198, 146, 20, 0.10);
+    --accent-light: #d4a83a;
+    --green: #4ade80;
+    --red: #f87171;
+    --amber: #C69214;
+    --cp-green: #154734;
+    --cp-green-subtle: rgba(21, 71, 52, 0.4);
+    --text: #f0f0f4;
+    --muted: #7e7e98;
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    width: 380px;
+    min-height: 520px;
+    overflow: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    border-top: 2px solid var(--cp-green);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo-icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .logo-text {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .logo-text span { color: #3a9b6f; }
+  .header-actions { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .icon-btn:hover { background: var(--surface2); color: var(--text); }
+
+  /* ── SCREENS ── */
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadeUp 0.2s ease; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── IDLE SCREEN ── */
+  .idle-body {
+    padding: 14px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .capture-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: var(--radius);
+    background: var(--cp-green);
+    color: #f0f0f4;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: all 0.18s;
+    box-shadow: 0 0 0 0 rgba(21,71,52,0.3);
+  }
+  .capture-btn:hover {
+    background: #1a5c42;
+    box-shadow: 0 4px 20px rgba(21,71,52,0.3);
+    transform: translateY(-1px);
+  }
+  .capture-btn:active { transform: translateY(0); }
+
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
+  /* saved events mini-list */
+  .saved-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    margin-bottom: 8px;
+  }
+  .saved-header span {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+  }
+  .saved-header .view-all {
+    font-size: 11px;
+    color: var(--accent-light);
+    cursor: pointer;
+    background: none; border: none;
+    font-family: inherit;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+  .saved-header .view-all:hover { opacity: 0.7; }
+  .saved-list { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 6px; }
+  .saved-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .saved-item:hover { border-color: var(--accent); background: var(--surface2); }
+  .saved-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); flex-shrink: 0;
+    border: none;
+  }
+  .saved-info { flex: 1; min-width: 0; }
+  .saved-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .saved-date { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .saved-export {
+    font-size: 11px; color: var(--muted); background: none; border: none;
+    cursor: pointer; font-family: inherit; padding: 2px 6px;
+    border-radius: 6px; transition: all 0.1s;
+  }
+  .saved-export:hover { background: var(--surface2); color: var(--accent-light); }
+
+  /* ── LOADING SCREEN ── */
+  .loading-body {
+    padding: 48px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  .progress-track {
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 99px;
+    animation: progress 2.5s ease forwards;
+  }
+  @keyframes progress {
+    0%   { width: 0%; }
+    40%  { width: 55%; }
+    80%  { width: 80%; }
+    100% { width: 95%; }
+  }
+  .status-steps { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  .step {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--muted);
+    transition: color 0.3s;
+  }
+  .step.done { color: var(--text); }
+  .step.active { color: var(--accent-light); }
+  .step-icon { font-size: 14px; width: 20px; text-align: center; }
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── CAMERA FLASH ANIMATION ── */
+  @keyframes flashPop {
+    0%   { transform: scale(1);    filter: brightness(1) drop-shadow(0 0 0px #fff); }
+    15%  { transform: scale(1.5);  filter: brightness(3)  drop-shadow(0 0 8px #fff); }
+    35%  { transform: scale(0.9);  filter: brightness(1.2) drop-shadow(0 0 2px #fff); }
+    55%  { transform: scale(1.2);  filter: brightness(1.8) drop-shadow(0 0 4px #C69214); }
+    75%  { transform: scale(1);    filter: brightness(1);  }
+    100% { transform: scale(1);    filter: brightness(1);  }
+  }
+  #btn-camera.flashing {
+    animation: flashPop 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+    display: inline-block;
+  }
+
+  /* ── RESULT SCREEN ── */
+  .result-body { padding: 16px 18px 20px; }
+  .event-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(74, 222, 128, 0.12);
+    color: var(--green);
+    font-size: 11px; font-weight: 500;
+    padding: 4px 10px; border-radius: 99px;
+    margin-bottom: 14px;
+  }
+  .event-badge::before { content: '●'; font-size: 8px; }
+
+  .form-grid { display: flex; flex-direction: column; gap: 8px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .field {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .field label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+  }
+  .field input, .field textarea {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    resize: none;
+  }
+  .field input:focus, .field textarea:focus {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+  .field input::placeholder, .field textarea::placeholder { color: var(--border); }
+
+  .actions {
+    display: flex; gap: 8px; margin-top: 14px;
+  }
+  .btn-primary {
+    flex: 1; padding: 11px;
+    background: var(--accent);
+    color: #fff; border: none;
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+    color: #ffffff;
+  }
+  .btn-primary:hover { background: #d4a83a; }
+  .btn-secondary {
+    flex: 1; padding: 11px;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent-light); }
+
+  /* ── NO EVENT SCREEN ── */
+  .no-event-body {
+    padding: 48px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+  }
+  .no-event-icon { font-size: 36px; opacity: 0.4; }
+  .no-event-title { font-size: 16px; font-weight: 600; }
+  .no-event-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+
+  /* ── LIGHT MODE ── */
+  body.light {
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface2: #ebebef;
+    --border: #d8d8e0;
+    --text: #111114;
+    --muted: #888899;
+  }
+  body.light .header { border-bottom-color: var(--border); }
+  body.light .field input, body.light .field textarea { color: var(--text); }
+  body.light .demo-nav { background: var(--bg); }
+
+  /* ── GOOGLE SIGN-IN BANNER ── */
+  .signin-banner {
+    margin: 0 18px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .signin-banner.hidden { display: none; }
+  .signin-text { flex: 1; }
+  .signin-text p { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .signin-text p strong { color: var(--text); font-weight: 500; }
+  .google-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 11px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .google-btn:hover { border-color: rgba(198,146,20,0.5); color: var(--accent-light); }
+
+  /* ── USER AVATAR IN HEADER ── */
+  .user-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    display: none;
+    align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600;
+    color: #ffffff;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .user-avatar.visible { display: flex; }
+
+  /* ── GREETING ── */
+  .greeting { display: none; padding: 14px 20px 0; overflow: hidden; }
+  .greeting.visible { display: block; animation: slideDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  .greeting p { font-size: 17px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; }
+  .greeting p span { color: var(--accent-light); }
+
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── SUCCESS TOAST ── */
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%) translateY(60px);
+    background: var(--green);
+    color: #0a1a0f;
+    font-size: 13px; font-weight: 600;
+    padding: 8px 16px; border-radius: 99px;
+    transition: transform 0.3s ease;
+    white-space: nowrap;
+    z-index: 100;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── DEMO NAV ── */
+  .demo-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    display: flex; gap: 6px; align-items: center;
+    font-size: 10px; color: var(--muted);
+  }
+  .demo-nav span { flex: 1; }
+  .demo-btn {
+    padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted);
+    font-size: 10px; cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.1s;
+  }
+  .demo-btn:hover { border-color: var(--accent); color: var(--accent-light); }
+  .demo-btn.active-btn { border-color: var(--accent); color: var(--accent-light); background: var(--accent-glow); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">📸</div>
+    <div class="logo-text">Poly<span>Sync</span></div>
+  </div>
+  <div class="header-actions">
+    <div class="user-avatar" id="user-avatar" title="Signed in"></div>
+    <button class="icon-btn" title="Saved events" onclick="showScreen('idle')">☰</button>
+    <button class="icon-btn" id="theme-toggle" title="Toggle light/dark mode" onclick="toggleTheme()">☀️</button>
+  </div>
+</div>
+
+<!-- SCREEN: IDLE -->
+<div class="screen active" id="screen-idle">
+
+  <!-- Sign-in banner (shown when logged out) -->
+  <div class="signin-banner" id="signin-banner">
+    <div class="signin-text">
+      <p><strong>Save & sync events</strong></p>
+      <p>Sign in to keep your events across sessions.</p>
+    </div>
+    <button class="google-btn" onclick="simulateLogin()">
+      <svg class="google-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+      </svg>
+      Sign in
+    </button>
+  </div>
+
+  <!-- Greeting (shown when logged in) -->
+  <div class="greeting" id="greeting">
+    <p>Hello, <span id="greeting-name">there</span> 👋</p>
+  </div>
+
+  <div style="height: 4px;"></div>
+  <div class="idle-body">
+    <button class="capture-btn" onclick="simulateCapture()">
+      <span id="btn-camera">📷</span> Capture Event
+    </button>
+    <p class="hint">Navigate to an event page, flyer, or Instagram post,<br>then click Capture.</p>
+  </div>
+  <div class="divider"></div>
+  <div style="height: 12px;"></div>
+  <div class="saved-header">
+    <span>Saved Events</span>
+    <a class="view-all" href="#" onclick="return false;">View all →</a>
+  </div>
+  <div class="saved-list" id="saved-list">
+    <div class="saved-item">
+      <div class="saved-dot"></div>
+      <div class="saved-info">
+        <div class="saved-title">Hackathon @ Cal Poly SLO</div>
+        <div class="saved-date">Sat Feb 22 · 9:00 AM</div>
+      </div>
+      <button class="saved-export" onclick="triggerICS(event, 'Hackathon @ Cal Poly SLO')">↓ ICS</button>
+    </div>
+    <div class="saved-item">
+      <div class="saved-dot"></div>
+      <div class="saved-info">
+        <div class="saved-title">Spring Career Fair 2025</div>
+        <div class="saved-date">Tue Mar 4 · 11:00 AM</div>
+      </div>
+      <button class="saved-export" onclick="triggerICS(event, 'Spring Career Fair')">↓ ICS</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: LOADING -->
+<div class="screen" id="screen-loading">
+  <div class="loading-body">
+    <div style="width:100%">
+      <div class="progress-track"><div class="progress-bar" id="pbar"></div></div>
+    </div>
+    <div class="status-steps">
+      <div class="step done" id="step1"><div class="step-icon">✓</div> Capturing screenshot</div>
+      <div class="step active" id="step2"><div class="step-icon"><div class="spinner"></div></div> Analyzing with AI</div>
+      <div class="step" id="step3"><div class="step-icon">○</div> Extracting event details</div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: RESULT (event found) -->
+<div class="screen" id="screen-result">
+  <div class="result-body">
+    <div class="event-badge">Event detected</div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Title</label>
+        <input type="text" id="f-title" value="Cal Poly Spring Hackathon 2025" />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Start</label>
+          <input type="text" id="f-start" value="Feb 22 · 9:00 AM" />
+        </div>
+        <div class="field">
+          <label>End</label>
+          <input type="text" id="f-end" value="Feb 22 · 6:00 PM" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Timezone</label>
+          <input type="text" id="f-tz" value="America/Los_Angeles" />
+        </div>
+        <div class="field">
+          <label>Cost</label>
+          <input type="text" id="f-cost" value="Free" />
+        </div>
+      </div>
+      <div class="field">
+        <label>Location</label>
+        <input type="text" id="f-loc" value="Dexter Lawn, Cal Poly SLO" />
+      </div>
+      <div class="field">
+        <label>Host</label>
+        <input type="text" id="f-host" value="Cal Poly Computer Science Club" />
+      </div>
+      <div class="field">
+        <label>Registration Link</label>
+        <input type="text" id="f-link" value="devpost.com/calpoly-hack-2025" />
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" onclick="saveEvent()">Save Event</button>
+      <button class="btn-secondary" onclick="exportICS()">↓ Export ICS</button>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN: NO EVENT -->
+<div class="screen" id="screen-noevt">
+  <div class="no-event-body">
+    <div class="no-event-icon">🔍</div>
+    <div class="no-event-title">No event detected</div>
+    <div class="no-event-sub">The current page doesn't appear to contain event information. Try navigating to an event flyer, Instagram post, or event page.</div>
+    <button class="capture-btn" style="max-width:240px; margin-top:8px;" onclick="showScreen('idle')">← Back</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- DEMO NAV (remove in production) -->
+<div class="demo-nav">
+  <span>Preview screens →</span>
+  <button class="demo-btn active-btn" onclick="showScreen('idle')">Idle</button>
+  <button class="demo-btn" onclick="showLoading()">Loading</button>
+  <button class="demo-btn" onclick="showScreen('result')">Result</button>
+  <button class="demo-btn" onclick="showScreen('noevt')">No Event</button>
+</div>
+
+<script>
+  function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    document.querySelectorAll('.demo-btn').forEach(b => b.classList.remove('active-btn'));
+  }
+
+  let cameraRevertTimer = null;
+
+  function flashCamera() {
+    const icon = document.getElementById('btn-camera');
+    if (cameraRevertTimer) clearTimeout(cameraRevertTimer);
+    icon.textContent = '📸';
+    icon.classList.remove('flashing');
+    void icon.offsetWidth;
+    icon.classList.add('flashing');
+  }
+
+  function revertCamera() {
+    const icon = document.getElementById('btn-camera');
+    cameraRevertTimer = setTimeout(() => {
+      icon.classList.remove('flashing');
+      icon.textContent = '📷';
+    }, 2500);
+  }
+
+  function simulateCapture() {
+    // Flash immediately on button press
+    flashCamera();
+    // Short delay so user sees the flash before transitioning
+    setTimeout(() => {
+      showLoading();
+    }, 300);
+    setTimeout(() => {
+      document.getElementById('step2').classList.remove('active');
+      document.getElementById('step2').classList.add('done');
+      document.getElementById('step2').querySelector('.step-icon').textContent = '✓';
+      document.getElementById('step3').classList.add('active');
+      document.getElementById('step3').querySelector('.step-icon').innerHTML = '<div class="spinner"></div>';
+    }, 1500);
+    setTimeout(() => {
+      showScreen('result');
+      revertCamera();
+    }, 2900);
+  }
+
+  function showLoading() {
+    showScreen('loading');
+    // reset progress bar
+    const pb = document.getElementById('pbar');
+    pb.style.animation = 'none';
+    pb.offsetHeight; // reflow
+    pb.style.animation = '';
+    // reset steps
+    document.getElementById('step1').className = 'step done';
+    document.getElementById('step1').querySelector('.step-icon').textContent = '✓';
+    document.getElementById('step2').className = 'step active';
+    document.getElementById('step2').querySelector('.step-icon').innerHTML = '<div class="spinner"></div>';
+    document.getElementById('step3').className = 'step';
+    document.getElementById('step3').querySelector('.step-icon').textContent = '○';
+  }
+
+  function saveEvent() {
+    showToast('✓ Event saved!');
+    setTimeout(() => showScreen('idle'), 1000);
+  }
+
+  function exportICS() {
+    showToast('↓ ICS file downloaded');
+  }
+
+  function triggerICS(e, name) {
+    e.stopPropagation();
+    showToast('↓ ' + name + '.ics downloaded');
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // ── GOOGLE LOGIN SIMULATION ──
+  const MOCK_USER = { name: 'Alex', initials: 'AJ' };
+  let isLoggedIn = false;
+
+  function simulateLogin() {
+    isLoggedIn = true;
+    // Hide banner
+    document.getElementById('signin-banner').classList.add('hidden');
+    // Show greeting
+    document.getElementById('greeting-name').textContent = MOCK_USER.name;
+    document.getElementById('greeting').classList.add('visible');
+    // Show avatar
+    const avatar = document.getElementById('user-avatar');
+    avatar.textContent = MOCK_USER.initials;
+    avatar.classList.add('visible');
+    showToast('✓ Signed in as ' + MOCK_USER.name);
+  }
+
+  // ── THEME TOGGLE ──
+  let isDark = true;
+  function toggleTheme() {
+    isDark = !isDark;
+    document.body.classList.toggle('light', !isDark);
+    document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+  }
+</script>
+</body>
+</html>
