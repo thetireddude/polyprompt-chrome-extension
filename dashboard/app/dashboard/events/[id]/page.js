@@ -1,28 +1,104 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useSessionGuard } from "@/lib/useSessionGuard";
 
 const FIELD_NAMES = [
   "title",
-  "start_datetime",
-  "end_datetime",
-  "timezone",
   "location",
   "host",
-  "registration_link",
-  "cost",
   "source_url"
 ];
 
 const EMPTY_INVITEE = { name: "", email: "" };
+const EMPTY_FORM = {
+  title: "",
+  start_date: "",
+  start_time: "",
+  end_date: "",
+  end_time: "",
+  location: "",
+  host: "",
+  source_url: ""
+};
+
+const TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const hour = Math.floor(index / 4);
+  const minute = (index % 4) * 15;
+  const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  const label = new Intl.DateTimeFormat([], {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(2000, 0, 1, hour, minute));
+  return { value, label };
+});
 
 function parseDate(value) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function toTimeKey(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function roundToQuarterHour(date) {
+  const rounded = new Date(date);
+  const roundedMinutes = Math.round(rounded.getMinutes() / 15) * 15;
+
+  rounded.setSeconds(0, 0);
+  if (roundedMinutes === 60) {
+    rounded.setHours(rounded.getHours() + 1);
+    rounded.setMinutes(0);
+  } else {
+    rounded.setMinutes(roundedMinutes);
+  }
+
+  return rounded;
+}
+
+function splitDateTime(value) {
+  const parsed = parseDate(value);
+  if (!parsed) return { date: "", time: "" };
+
+  const rounded = roundToQuarterHour(parsed);
+  return {
+    date: toDateKey(rounded),
+    time: toTimeKey(rounded)
+  };
+}
+
+function mergeDateAndTime(dateKey, timeKey) {
+  if (!dateKey || !timeKey) return null;
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const [hour, minute] = timeKey.split(":").map(Number);
+  const merged = new Date(year, month - 1, day, hour, minute, 0, 0);
+  return Number.isNaN(merged.getTime()) ? null : merged.toISOString();
+}
+
+function buildForm(eventData) {
+  const start = splitDateTime(eventData?.start_datetime);
+  const end = splitDateTime(eventData?.end_datetime);
+
+  return {
+    ...EMPTY_FORM,
+    title: eventData?.title || "",
+    start_date: start.date,
+    start_time: start.time,
+    end_date: end.date,
+    end_time: end.time,
+    location: eventData?.location || "",
+    host: eventData?.host || "",
+    source_url: eventData?.source_url || ""
+  };
 }
 
 function toGoogleDateTime(value) {
@@ -38,7 +114,7 @@ function buildGoogleCalendarUrl(event, attendees = []) {
   const end = parseDate(event?.end_datetime) || new Date(start.getTime() + 60 * 60 * 1000);
 
   const details = [
-    event?.host ? `Host: ${event.host}` : null,
+    event?.host ? `Event Organizer: ${event.host}` : null,
     event?.registration_link ? `Registration: ${event.registration_link}` : null,
     event?.cost ? `Cost: ${event.cost}` : null,
     event?.source_url ? `Source: ${event.source_url}` : null
@@ -58,9 +134,6 @@ function buildGoogleCalendarUrl(event, attendees = []) {
   if (event?.location) {
     params.set("location", event.location);
   }
-  if (event?.timezone) {
-    params.set("ctz", event.timezone);
-  }
 
   const emails = attendees
     .map((entry) => (entry.email || "").trim())
@@ -79,7 +152,7 @@ export default function EventDetailPage() {
   const { supabase, user, loading } = useSessionGuard();
 
   const [event, setEvent] = useState(null);
-  const [form, setForm] = useState({});
+  const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -112,14 +185,7 @@ export default function EventDetailPage() {
         setError(fetchError.message);
       } else {
         setEvent(data);
-
-        const initialForm = {};
-        FIELD_NAMES.forEach((field) => {
-          initialForm[field] = data[field] || "";
-        });
-
-        if (!initialForm.timezone) initialForm.timezone = "America/Los_Angeles";
-        setForm(initialForm);
+        setForm(buildForm(data));
       }
 
       setBusy(false);
@@ -142,7 +208,27 @@ export default function EventDetailPage() {
       payload[field] = value || null;
     });
 
-    if (!payload.timezone) payload.timezone = "America/Los_Angeles";
+    const hasPartialStart = (form.start_date && !form.start_time) || (!form.start_date && form.start_time);
+    const hasPartialEnd = (form.end_date && !form.end_time) || (!form.end_date && form.end_time);
+
+    if (hasPartialStart || hasPartialEnd) {
+      setError("Choose both date and time for start and end.");
+      setSaving(false);
+      return;
+    }
+
+    payload.start_datetime = mergeDateAndTime(form.start_date, form.start_time);
+    payload.end_datetime = mergeDateAndTime(form.end_date, form.end_time);
+
+    if (payload.start_datetime && payload.end_datetime) {
+      const start = new Date(payload.start_datetime);
+      const end = new Date(payload.end_datetime);
+      if (end.getTime() < start.getTime()) {
+        setError("End date/time must be after start date/time.");
+        setSaving(false);
+        return;
+      }
+    }
 
     const { data, error: updateError } = await supabase
       .from("events")
@@ -156,6 +242,7 @@ export default function EventDetailPage() {
       setError(updateError.message);
     } else {
       setEvent(data);
+      setForm(buildForm(data));
       setMessage("Event updated.");
     }
 
@@ -173,10 +260,11 @@ export default function EventDetailPage() {
 
     if (!opened) {
       setCalendarError("Popup blocked. Allow popups for this site and try again.");
-      return;
+      return false;
     }
 
     setCalendarMessage("Google Calendar opened.");
+    return true;
   }
 
   function updateInvitee(index, key, value) {
@@ -224,11 +312,6 @@ export default function EventDetailPage() {
     }
 
     openGoogleCalendar(normalized);
-    setCalendarMessage(
-      `Opened Google Calendar with ${normalized.length} invitee${
-        normalized.length === 1 ? "" : "s"
-      }. Save there to send invitations.`
-    );
   }
 
   async function deleteEvent() {
@@ -255,6 +338,10 @@ export default function EventDetailPage() {
     router.replace("/dashboard");
   }
 
+  function goToDashboard() {
+    router.push("/dashboard");
+  }
+
   if (busy) {
     return <div className="loading">Loading event...</div>;
   }
@@ -263,9 +350,9 @@ export default function EventDetailPage() {
     return (
       <div className="grid">
         <div className="error">{error || "Event not found."}</div>
-        <Link href="/dashboard" className="button-secondary">
+        <button type="button" className="button-secondary" onClick={goToDashboard}>
           Back to events
-        </Link>
+        </button>
       </div>
     );
   }
@@ -275,11 +362,11 @@ export default function EventDetailPage() {
       <header className="page-head">
         <div>
           <h1>{event.title || "Untitled Event"}</h1>
-          <p>Edit captured fields before sharing or exporting elsewhere.</p>
+          <p>Edit event information before sharing.</p>
         </div>
-        <Link href="/dashboard" className="button-secondary">
+        <button type="button" className="button-secondary" onClick={goToDashboard}>
           Back
-        </Link>
+        </button>
       </header>
 
       <section className="card">
@@ -294,27 +381,53 @@ export default function EventDetailPage() {
             </label>
 
             <label>
-              Timezone
+              Start Day
               <input
-                value={form.timezone || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, timezone: e.target.value }))}
+                type="date"
+                className="day-input"
+                value={form.start_date || ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, start_date: e.target.value }))}
               />
             </label>
 
             <label>
-              Start Date/Time (ISO)
+              Start Time
+              <select
+                value={form.start_time || ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, start_time: e.target.value }))}
+              >
+                <option value="">Select time</option>
+                {TIME_OPTIONS.map((option) => (
+                  <option key={`start-time-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              End Day
               <input
-                value={form.start_datetime || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, start_datetime: e.target.value }))}
+                type="date"
+                className="day-input"
+                value={form.end_date || ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))}
               />
             </label>
 
             <label>
-              End Date/Time (ISO)
-              <input
-                value={form.end_datetime || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, end_datetime: e.target.value }))}
-              />
+              End Time
+              <select
+                value={form.end_time || ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, end_time: e.target.value }))}
+              >
+                <option value="">Select time</option>
+                {TIME_OPTIONS.map((option) => (
+                  <option key={`end-time-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label>
@@ -326,26 +439,10 @@ export default function EventDetailPage() {
             </label>
 
             <label>
-              Host
+              Event Organizer
               <input
                 value={form.host || ""}
                 onChange={(e) => setForm((prev) => ({ ...prev, host: e.target.value }))}
-              />
-            </label>
-
-            <label>
-              Registration Link
-              <input
-                value={form.registration_link || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, registration_link: e.target.value }))}
-              />
-            </label>
-
-            <label>
-              Cost
-              <input
-                value={form.cost || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, cost: e.target.value }))}
               />
             </label>
 
@@ -359,11 +456,16 @@ export default function EventDetailPage() {
           </div>
 
           <div className="actions">
-            <button className="button" type="submit" disabled={saving}>
+            <button className="button-secondary" type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save Changes"}
             </button>
-            <button className="button-secondary" type="button" onClick={() => openGoogleCalendar()}>
-              Add to Google Calendar
+            <button
+              className="button-secondary button-with-icon"
+              type="button"
+              onClick={() => openGoogleCalendar()}
+            >
+              <img src="/google-calendar-logo.svg" alt="" aria-hidden="true" className="button-icon" />
+              <span>Add to Google Calendar</span>
             </button>
             <button className="button-danger" type="button" onClick={deleteEvent} disabled={deleting}>
               {deleting ? "Deleting..." : "Delete Event"}
@@ -411,11 +513,11 @@ export default function EventDetailPage() {
               ))}
             </div>
 
-            <div className="actions">
+            <div className="actions invite-actions">
               <button className="button-secondary" type="button" onClick={addInvitee}>
                 Add Friend
               </button>
-              <button className="button" type="button" onClick={inviteFriends}>
+              <button className="button-secondary" type="button" onClick={inviteFriends}>
                 Invite via Google Calendar
               </button>
             </div>

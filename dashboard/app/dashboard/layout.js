@@ -13,6 +13,8 @@ export default function DashboardLayout({ children }) {
   const router = useRouter();
   const { user, loading, supabase } = useSessionGuard();
   const [signingOut, setSigningOut] = useState(false);
+  const isEventsActive = pathname === "/dashboard" || pathname.startsWith("/dashboard/events/");
+  const isAccountActive = pathname.startsWith("/dashboard/account") || pathname === "/dashboard/settings";
 
   async function signOut() {
     setSigningOut(true);
@@ -33,45 +35,39 @@ export default function DashboardLayout({ children }) {
   return (
     <main className="dashboard-shell">
       <aside className="sidebar">
-        <div>
-          <p className="brand-kicker">EventSnap</p>
+        <div className="sidebar-brand">
+          <p className="brand-kicker brand-wordmark">
+            <span className="brand-poly">Poly</span>
+            <span className="brand-sync">Sync</span>
+          </p>
           <h1 className="nav-title">Dashboard</h1>
           <p className="nav-subtitle">{user?.email || ""}</p>
         </div>
 
-        <nav className="nav-sections">
-          <section className="nav-section">
-            <p className="nav-section-title">Events</p>
-            <div className="nav-links">
-              <Link
-                href={EVENT_NAV_ITEM.href}
-                className={
-                  pathname === "/dashboard" || pathname.startsWith("/dashboard/events/") ? "active" : ""
-                }
-              >
-                {EVENT_NAV_ITEM.label}
-              </Link>
-            </div>
-          </section>
-
-          <section className="nav-section">
-            <p className="nav-section-title">Account</p>
-            <div className="nav-links">
-              <Link
-                href={ACCOUNT_NAV_ITEM.href}
-                className={
-                  pathname.startsWith("/dashboard/account") || pathname === "/dashboard/settings" ? "active" : ""
-                }
-              >
-                {ACCOUNT_NAV_ITEM.label}
-              </Link>
-            </div>
-          </section>
+        <nav className="flex flex-col items-start gap-3">
+          <Link
+            href={EVENT_NAV_ITEM.href}
+            className={`inline-flex w-fit items-center justify-center rounded-full border px-6 py-2 text-sm font-semibold leading-none transition-colors ${
+              isEventsActive
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-800 text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            {EVENT_NAV_ITEM.label}
+          </Link>
+          <Link
+            href={ACCOUNT_NAV_ITEM.href}
+            className={`inline-flex w-fit items-center justify-center rounded-full border px-6 py-2 text-sm font-semibold leading-none transition-colors ${
+              isAccountActive
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-800 text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            {ACCOUNT_NAV_ITEM.label}
+          </Link>
         </nav>
 
-        <div className="note">Extension sync writes into the same event table in real time.</div>
-
-        <div>
+        <div className="sidebar-footer">
           <button className="button-secondary" onClick={signOut} disabled={signingOut}>
             {signingOut ? "Signing out..." : "Sign out"}
           </button>

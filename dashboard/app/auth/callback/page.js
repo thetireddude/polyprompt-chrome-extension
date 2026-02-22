@@ -85,7 +85,7 @@ export default function AuthCallbackPage() {
   return (
     <main className="auth-shell">
       <section className="auth-card">
-        <p className="brand-kicker">EventSnap Dashboard</p>
+        <p className="brand-kicker">PolySync Dashboard</p>
         <h1>Finalizing sign-in</h1>
         <p>Completing Google authentication and preparing your dashboard.</p>
         {error ? <div className="error">{error}</div> : <div className="note">Please wait...</div>}
