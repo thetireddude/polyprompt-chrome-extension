@@ -1,8 +1,10 @@
 const RUNTIME_CONFIG = globalThis.EVENTSNAP_CONFIG || {};
 const SUPABASE_URL = RUNTIME_CONFIG.supabaseUrl || "https://YOUR_PROJECT_REF.supabase.co";
 const SUPABASE_ANON_KEY = RUNTIME_CONFIG.supabaseAnonKey || "YOUR_SUPABASE_PUBLISHABLE_KEY";
-const SUPABASE_SESSION_KEY = "eventsnap_supabase_session";
-const SESSION_REFRESH_LEEWAY_SECONDS = 60;
+const AUTH_CONFIG = {
+  supabaseUrl: SUPABASE_URL,
+  supabaseAnonKey: SUPABASE_ANON_KEY
+};
 
 const captureBtn = document.getElementById("captureBtn");
 const saveEventBtn = document.getElementById("saveEventBtn");
@@ -428,23 +430,10 @@ async function hydrateAuthSession() {
   setAuthBusy(true);
 
   try {
-    const stored = await readStoredSession();
-    if (!stored) {
-      setAuthSession(null);
-      return;
-    }
-
-    const refreshed = await ensureFreshSession(stored, { persist: true });
-    if (!refreshed) {
-      await clearStoredSession();
-      setAuthSession(null);
-      return;
-    }
-
-    setAuthSession(refreshed);
+    const session = await fetchAuthSession();
+    setAuthSession(session);
   } catch (err) {
     console.warn("Failed to hydrate auth session:", err);
-    await clearStoredSession();
     setAuthSession(null);
   } finally {
     setAuthBusy(false);
@@ -458,10 +447,7 @@ async function signInWithGoogle() {
     assertSupabaseConfig();
     const response = await sendRuntimeMessage({
       type: "AUTH_SIGN_IN",
-      config: {
-        supabaseUrl: SUPABASE_URL,
-        supabaseAnonKey: SUPABASE_ANON_KEY
-      }
+      config: AUTH_CONFIG
     });
     if (!response?.ok) {
       throw new Error(response?.error || "Could not sign in with Google.");
@@ -472,14 +458,27 @@ async function signInWithGoogle() {
       throw new Error("Could not create an authenticated session.");
     }
 
-    await writeStoredSession(session);
     setAuthSession(session);
-    showToast(`✓ Signed in as ${session.user.email || getDisplayName(session.user)}`);
+    showToast(`✓ Signed in as ${session.user?.email || getDisplayName(session.user)}`);
   } catch (err) {
     showToast(`Sign-in failed: ${extractErrorMessage(err, "Could not sign in with Google.")}`);
   } finally {
     setAuthBusy(false);
   }
+}
+
+async function fetchAuthSession() {
+  assertSupabaseConfig();
+
+  const response = await sendRuntimeMessage({
+    type: "AUTH_GET_SESSION",
+    config: AUTH_CONFIG
+  });
+  if (!response?.ok) {
+    throw new Error(response?.error || "Could not load auth session.");
+  }
+
+  return normalizeSession(response.session);
 }
 
 function sendRuntimeMessage(message) {
@@ -500,17 +499,18 @@ async function signOut() {
   setAuthBusy(true);
 
   try {
-    const session = authSession;
-    if (session?.access_token) {
-      await fetchSupabase("/auth/v1/logout", {
-        method: "POST",
-        accessToken: session.access_token
+    if (authSession?.access_token) {
+      const response = await sendRuntimeMessage({
+        type: "AUTH_SIGN_OUT",
+        config: AUTH_CONFIG
       });
+      if (!response?.ok) {
+        throw new Error(response?.error || "Could not sign out.");
+      }
     }
   } catch (_err) {
-    // We still clear local state even if server logout fails.
+    // We still clear UI state even if server logout fails.
   } finally {
-    await clearStoredSession();
     setAuthSession(null);
     setAuthBusy(false);
     showToast("Signed out.");
@@ -532,65 +532,6 @@ function normalizeSession(raw) {
     expires_at: explicitExpiresAt > 0 ? explicitExpiresAt : fallbackExpiresAt,
     user: raw.user || null
   };
-}
-
-function isSessionExpired(session) {
-  if (!session || !session.expires_at) return true;
-  const now = Math.floor(Date.now() / 1000);
-  return now + SESSION_REFRESH_LEEWAY_SECONDS >= Number(session.expires_at);
-}
-
-async function ensureFreshSession(candidate, { persist = false } = {}) {
-  let session = normalizeSession(candidate);
-  if (!session) return null;
-
-  if (isSessionExpired(session)) {
-    session = await refreshSession(session);
-    if (!session) return null;
-  }
-
-  if (!session.user) {
-    session.user = await fetchSupabaseUser(session.access_token);
-  }
-
-  if (persist) {
-    await writeStoredSession(session);
-  }
-
-  return session;
-}
-
-async function refreshSession(session) {
-  if (!session?.refresh_token) return null;
-
-  const { response, payload } = await fetchSupabase("/auth/v1/token?grant_type=refresh_token", {
-    method: "POST",
-    body: { refresh_token: session.refresh_token }
-  });
-
-  if (!response.ok) return null;
-
-  const refreshed = normalizeSession(payload);
-  if (!refreshed) return null;
-
-  if (!refreshed.user) {
-    refreshed.user = await fetchSupabaseUser(refreshed.access_token);
-  }
-
-  return refreshed;
-}
-
-async function fetchSupabaseUser(accessToken) {
-  const { response, payload } = await fetchSupabase("/auth/v1/user", {
-    method: "GET",
-    accessToken
-  });
-
-  if (!response.ok) {
-    throw new Error(extractApiMessage(payload, "Could not load account profile."));
-  }
-
-  return payload;
 }
 
 async function syncEventToSupabase(localEvent) {
@@ -615,7 +556,7 @@ async function syncEventToSupabase(localEvent) {
   return insertEvent(payload, session, true);
 }
 
-async function insertEvent(payload, session, allowRefreshRetry) {
+async function insertEvent(payload, session, allowReloadRetry) {
   const { response, payload: responsePayload } = await fetchSupabase("/rest/v1/events?select=id", {
     method: "POST",
     accessToken: session.access_token,
@@ -625,17 +566,13 @@ async function insertEvent(payload, session, allowRefreshRetry) {
     }
   });
 
-  if (response.status === 401 && allowRefreshRetry) {
-    const refreshed = await refreshSession(session);
-    if (!refreshed) {
-      await clearStoredSession();
-      setAuthSession(null);
+  if (response.status === 401 && allowReloadRetry) {
+    const latest = await getSyncSession();
+    if (!latest) {
       return { ok: false, error: "Session expired. Please log in again." };
     }
 
-    await writeStoredSession(refreshed);
-    setAuthSession(refreshed);
-    return insertEvent(payload, refreshed, false);
+    return insertEvent(payload, latest, false);
   }
 
   if (!response.ok) {
@@ -646,23 +583,11 @@ async function insertEvent(payload, session, allowRefreshRetry) {
 }
 
 async function getSyncSession() {
-  if (!authSession) return null;
-
   try {
-    const refreshed = await ensureFreshSession(authSession, { persist: true });
-    if (!refreshed) {
-      await clearStoredSession();
-      setAuthSession(null);
-      return null;
-    }
-
-    if (refreshed.access_token !== authSession.access_token || refreshed.expires_at !== authSession.expires_at) {
-      setAuthSession(refreshed);
-    }
-
-    return refreshed;
+    const session = await fetchAuthSession();
+    setAuthSession(session);
+    return session;
   } catch (_err) {
-    await clearStoredSession();
     setAuthSession(null);
     return null;
   }
@@ -729,17 +654,4 @@ async function getActiveTabUrl() {
   const tabUrl = tabs[0]?.url;
   if (!tabUrl || !/^https?:/i.test(tabUrl)) return null;
   return tabUrl;
-}
-
-async function readStoredSession() {
-  const result = await chrome.storage.local.get([SUPABASE_SESSION_KEY]);
-  return result[SUPABASE_SESSION_KEY] || null;
-}
-
-async function writeStoredSession(session) {
-  await chrome.storage.local.set({ [SUPABASE_SESSION_KEY]: session });
-}
-
-async function clearStoredSession() {
-  await chrome.storage.local.remove(SUPABASE_SESSION_KEY);
 }

@@ -1,4 +1,6 @@
-﻿const OPENAI_API_KEY = "YOUR_API_KEY";
+﻿importScripts("vendor/supabase.js");
+
+const OPENAI_API_KEY = "YOUR_API_KEY";
 
 /*
   EventSnap Background Service Worker (MV3)
@@ -9,7 +11,8 @@
 
 const OPENAI_ENDPOINT = "https://api.openai.com/v1/responses";
 const MODEL_NAME = "gpt-4.1-mini"; // Reasonable default; can be changed later
-const SUPABASE_SESSION_KEY = "eventsnap_supabase_session";
+const SUPABASE_CLIENTS = new Map();
+const SUPABASE_STORAGE_PREFIX = "eventsnap_supabase_auth:";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || !message.type) return;
@@ -71,6 +74,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const config = message.config || {};
         const session = await signInWithGoogle(config);
         sendResponse({ ok: true, session });
+      } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        sendResponse({ ok: false, error: msg });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "AUTH_GET_SESSION") {
+    (async () => {
+      try {
+        const config = message.config || {};
+        const session = await getCurrentSession(config);
+        sendResponse({ ok: true, session });
+      } catch (err) {
+        const msg = err && err.message ? err.message : String(err);
+        sendResponse({ ok: false, error: msg });
+      }
+    })();
+
+    return true;
+  }
+
+  if (message.type === "AUTH_SIGN_OUT") {
+    (async () => {
+      try {
+        const config = message.config || {};
+        await signOut(config);
+        sendResponse({ ok: true });
       } catch (err) {
         const msg = err && err.message ? err.message : String(err);
         sendResponse({ ok: false, error: msg });
@@ -186,17 +219,88 @@ function assertSupabaseConfig(config) {
   }
 }
 
-async function signInWithGoogle(config) {
-  assertSupabaseConfig(config);
+function assertSupabaseLibrary() {
+  if (typeof globalThis.supabase?.createClient !== "function") {
+    throw new Error("Supabase client library is missing. Ensure vendor/supabase.js is bundled with the extension.");
+  }
+}
 
+function getProjectRef(supabaseUrl) {
+  const host = new URL(String(supabaseUrl)).hostname;
+  return host.split(".")[0] || "project";
+}
+
+function createChromeStorageAdapter(namespace) {
+  const toKey = (key) => `${namespace}${key}`;
+
+  return {
+    async getItem(key) {
+      const namespacedKey = toKey(key);
+      const result = await chrome.storage.local.get([namespacedKey]);
+      return result[namespacedKey] ?? null;
+    },
+    async setItem(key, value) {
+      const namespacedKey = toKey(key);
+      await chrome.storage.local.set({ [namespacedKey]: value });
+    },
+    async removeItem(key) {
+      const namespacedKey = toKey(key);
+      await chrome.storage.local.remove(namespacedKey);
+    }
+  };
+}
+
+function getSupabaseClient(config) {
+  assertSupabaseConfig(config);
+  assertSupabaseLibrary();
+
+  const cacheKey = `${config.supabaseUrl}|${config.supabaseAnonKey}`;
+  if (SUPABASE_CLIENTS.has(cacheKey)) {
+    return SUPABASE_CLIENTS.get(cacheKey);
+  }
+
+  const projectRef = getProjectRef(config.supabaseUrl);
+  const namespace = `${SUPABASE_STORAGE_PREFIX}${projectRef}:`;
+  const storage = createChromeStorageAdapter(namespace);
+
+  const client = globalThis.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    auth: {
+      flowType: "pkce",
+      detectSessionInUrl: false,
+      persistSession: true,
+      autoRefreshToken: true,
+      storage,
+      storageKey: `${projectRef}-auth-token`
+    }
+  });
+
+  SUPABASE_CLIENTS.set(cacheKey, client);
+  return client;
+}
+
+async function signInWithGoogle(config) {
+  const supabase = getSupabaseClient(config);
   const redirectTo = chrome.identity.getRedirectURL("supabase-auth");
-  const authUrl = new URL(`${config.supabaseUrl}/auth/v1/authorize`);
-  authUrl.searchParams.set("provider", "google");
-  authUrl.searchParams.set("redirect_to", redirectTo);
-  authUrl.searchParams.set("prompt", "select_account");
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true,
+      queryParams: {
+        prompt: "select_account"
+      }
+    }
+  });
+
+  if (error) {
+    throw new Error(error.message || "Could not start Google sign-in.");
+  }
+  if (!data?.url) {
+    throw new Error("Supabase did not return an OAuth URL.");
+  }
 
   const callbackUrl = await chrome.identity.launchWebAuthFlow({
-    url: authUrl.toString(),
+    url: data.url,
     interactive: true
   });
 
@@ -204,47 +308,65 @@ async function signInWithGoogle(config) {
     throw new Error("Google sign-in was cancelled.");
   }
 
-  const session = await buildSessionFromCallback(config, callbackUrl);
+  await completeAuthCallback(supabase, callbackUrl);
+
+  const {
+    data: { session },
+    error: sessionError
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    throw new Error(sessionError.message || "Could not load authenticated session.");
+  }
   if (!session) {
     throw new Error("Could not create an authenticated session.");
   }
 
-  await chrome.storage.local.set({ [SUPABASE_SESSION_KEY]: session });
+  if (!session.user) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      throw new Error(userError.message || "Could not load account profile.");
+    }
+    return { ...session, user: userData?.user || null };
+  }
+
   return session;
 }
 
-async function buildSessionFromCallback(config, callbackUrl) {
-  const parsed = parseAuthCallback(callbackUrl);
-  if (!parsed.access_token) {
-    throw new Error("No access token returned from Supabase.");
-  }
-
-  const user = await fetchSupabaseUser(config, parsed.access_token);
-  return normalizeSession({
-    ...parsed,
-    user
-  });
-}
-
-function parseAuthCallback(callbackUrl) {
+async function completeAuthCallback(supabase, callbackUrl) {
   const parsed = new URL(callbackUrl);
   const queryParams = parsed.searchParams;
   const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ""));
   const params = mergeSearchParams(queryParams, hashParams);
 
-  const error = params.get("error") || params.get("error_code");
+  const providerError = params.get("error") || params.get("error_code");
   const errorDescription = params.get("error_description");
-  if (error || errorDescription) {
-    throw new Error(errorDescription || error || "Google authentication failed.");
+  if (providerError || errorDescription) {
+    throw new Error(errorDescription || providerError || "Google authentication failed.");
   }
 
-  return {
-    access_token: params.get("access_token"),
-    refresh_token: params.get("refresh_token"),
-    token_type: params.get("token_type") || "bearer",
-    expires_in: Number(params.get("expires_in") || 3600),
-    expires_at: Number(params.get("expires_at") || 0)
-  };
+  const code = params.get("code");
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      throw new Error(error.message || "Could not exchange auth code for a session.");
+    }
+    return;
+  }
+
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
+  if (!accessToken || !refreshToken) {
+    throw new Error("No auth code returned and no fallback token pair was provided.");
+  }
+
+  const { error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken
+  });
+  if (error) {
+    throw new Error(error.message || "Could not finalize sign-in session.");
+  }
 }
 
 function mergeSearchParams(searchParams, hashParams) {
@@ -258,72 +380,38 @@ function mergeSearchParams(searchParams, hashParams) {
   return merged;
 }
 
-function normalizeSession(raw) {
-  if (!raw || !raw.access_token) return null;
+async function getCurrentSession(config) {
+  const supabase = getSupabaseClient(config);
+  const {
+    data: { session },
+    error
+  } = await supabase.auth.getSession();
 
-  const expiresIn = Number(raw.expires_in || 0);
-  const explicitExpiresAt = Number(raw.expires_at || 0);
-  const fallbackExpiresAt = Math.floor(Date.now() / 1000) + (expiresIn > 0 ? expiresIn : 3600);
-
-  return {
-    access_token: raw.access_token,
-    refresh_token: raw.refresh_token || null,
-    token_type: raw.token_type || "bearer",
-    expires_in: expiresIn > 0 ? expiresIn : 3600,
-    expires_at: explicitExpiresAt > 0 ? explicitExpiresAt : fallbackExpiresAt,
-    user: raw.user || null
-  };
-}
-
-async function fetchSupabaseUser(config, accessToken) {
-  const { response, payload } = await fetchSupabase(config, "/auth/v1/user", {
-    method: "GET",
-    accessToken
-  });
-
-  if (!response.ok) {
-    throw new Error(extractApiMessage(payload, "Could not load account profile."));
+  if (error) {
+    throw new Error(error.message || "Could not read auth session.");
   }
 
-  return payload;
-}
-
-async function fetchSupabase(config, path, { method = "GET", body, accessToken, headers = {} } = {}) {
-  const requestHeaders = {
-    apikey: config.supabaseAnonKey,
-    ...headers
-  };
-
-  if (accessToken) {
-    requestHeaders.Authorization = `Bearer ${accessToken}`;
+  if (!session) {
+    return null;
   }
 
-  if (body !== undefined) {
-    requestHeaders["Content-Type"] = "application/json";
+  if (!session.user) {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      throw new Error(userError.message || "Could not load account profile.");
+    }
+
+    return { ...session, user: userData?.user || null };
   }
 
-  const response = await fetch(`${config.supabaseUrl}${path}`, {
-    method,
-    headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body)
-  });
-
-  const payload = await readJsonSafe(response);
-  return { response, payload };
+  return session;
 }
 
-async function readJsonSafe(response) {
-  const text = await response.text();
-  if (!text) return null;
+async function signOut(config) {
+  const supabase = getSupabaseClient(config);
+  const { error } = await supabase.auth.signOut();
 
-  try {
-    return JSON.parse(text);
-  } catch (_err) {
-    return { message: text };
+  if (error) {
+    throw new Error(error.message || "Could not sign out.");
   }
-}
-
-function extractApiMessage(payload, fallback) {
-  if (!payload) return fallback;
-  return payload.message || payload.msg || payload.error_description || payload.error || fallback;
 }
