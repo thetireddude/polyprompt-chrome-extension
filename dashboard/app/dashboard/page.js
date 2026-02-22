@@ -165,7 +165,7 @@ export default function DashboardEventsPage() {
 
   const monthGridDays = useMemo(() => {
     const monthStart = startOfMonth(focusDate);
-    const gridStart = startOfWeek(monthStart);
+    const gridStart = monthStart;
     return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
   }, [focusDate]);
 
@@ -208,6 +208,8 @@ export default function DashboardEventsPage() {
     }).format(focusDate);
   }, [calendarView, focusDate, weekDays]);
 
+  const calendarViewLabel = `${calendarView[0].toUpperCase()}${calendarView.slice(1)}`;
+
   function shiftRange(direction) {
     setFocusDate((prev) => {
       const next = new Date(prev);
@@ -241,6 +243,7 @@ export default function DashboardEventsPage() {
             const dayKey = toDayKey(day);
             const dayEvents = eventsByDay.get(dayKey) || [];
             const isOutsideMonth = day.getMonth() !== focusDate.getMonth();
+            const isNextMonthStart = isOutsideMonth && day.getDate() === 1;
             const limited = dayEvents.slice(0, 3);
 
             return (
@@ -248,6 +251,16 @@ export default function DashboardEventsPage() {
                 key={dayKey}
                 className={`calendar-day-cell${isOutsideMonth ? " calendar-day-cell-outside" : ""}`}
               >
+                {isNextMonthStart ? (
+                  <div className="calendar-month-transition">
+                    {new Intl.DateTimeFormat([], {
+                      month: "long",
+                      day: "numeric",
+                      year: day.getFullYear() === focusDate.getFullYear() ? undefined : "numeric"
+                    }).format(day)}
+                  </div>
+                ) : null}
+
                 <div className="calendar-day-head">
                   <span>{day.getDate()}</span>
                   {dayEvents.length ? <span className="muted">{dayEvents.length}</span> : null}
@@ -364,33 +377,29 @@ export default function DashboardEventsPage() {
       {displayMode === "calendar" ? (
         <section className="card">
           <div className="calendar-toolbar">
-            <div className="calendar-range">{visibleRangeLabel}</div>
-
-            <div className="actions">
-              <div className="segment-toggle">
-                {CALENDAR_VIEWS.map((view) => (
-                  <button
-                    key={view}
-                    type="button"
-                    className={calendarView === view ? "segment-active" : ""}
-                    onClick={() => setCalendarView(view)}
-                  >
-                    {view[0].toUpperCase() + view.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              <div className="segment-toggle">
-                <button type="button" onClick={() => shiftRange(-1)}>
-                  Prev
+            <div className="calendar-toolbar-main">
+              <div className="calendar-range">{visibleRangeLabel}</div>
+              <div className="actions calendar-nav-actions">
+                <button type="button" className="button-secondary" onClick={() => shiftRange(-1)}>
+                  Previous {calendarViewLabel}
                 </button>
-                <button type="button" onClick={() => setFocusDate(startOfDay(new Date()))}>
-                  Today
-                </button>
-                <button type="button" onClick={() => shiftRange(1)}>
-                  Next
+                <button type="button" className="button-secondary" onClick={() => shiftRange(1)}>
+                  Next {calendarViewLabel}
                 </button>
               </div>
+            </div>
+
+            <div className="segment-toggle">
+              {CALENDAR_VIEWS.map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  className={calendarView === view ? "segment-active" : ""}
+                  onClick={() => setCalendarView(view)}
+                >
+                  {view[0].toUpperCase() + view.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -408,7 +417,16 @@ export default function DashboardEventsPage() {
         <section className="card">
           <div className="page-head">
             <div>
-              <h3>Saved Events</h3>
+              <h3>
+                Saved Events From{" "}
+                <a
+                  href="https://github.com/thetireddude/polyprompt-chrome-extension"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  EventSnap
+                </a>
+              </h3>
               <p className="muted">{events.length} total</p>
             </div>
 
