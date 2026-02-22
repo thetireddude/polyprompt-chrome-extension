@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -10,35 +10,60 @@
     <div class="app">
       <header class="header">
         <h1>EventSnap</h1>
-        <p>Capture events from your current tab.</p>
+        <p>Capture events from your current tab and sync them to your dashboard.</p>
       </header>
 
-      <!-- Section 1: API Key Settings -->
       <section class="section">
         <h2>OpenAI API Key</h2>
         <div class="row">
-          <input
-            id="apiKeyInput"
-            type="password"
-            placeholder="sk-..."
-            autocomplete="off"
-          />
-          <button id="saveKeyBtn">Save Key</button>
+          <input id="apiKeyInput" type="password" placeholder="sk-..." autocomplete="off" />
+          <button id="saveKeyBtn">Save</button>
         </div>
         <div id="keyStatus" class="status-muted">Key not saved</div>
       </section>
 
-      <!-- Section 2: Capture Button -->
+      <section class="section">
+        <h2>Supabase Config</h2>
+        <label>
+          Project URL
+          <input id="supabaseUrlInput" type="text" placeholder="https://YOUR_PROJECT_REF.supabase.co" />
+        </label>
+        <label>
+          Anon Key
+          <input id="supabaseAnonKeyInput" type="password" placeholder="eyJ..." autocomplete="off" />
+        </label>
+        <div class="row">
+          <button id="saveSupabaseBtn">Save Supabase</button>
+        </div>
+        <div id="supabaseConfigStatus" class="status-muted">Supabase config not saved</div>
+
+        <div class="row">
+          <button id="loginBtn" class="primary-light">Sign in with Google</button>
+          <button id="logoutBtn" disabled>Sign out</button>
+        </div>
+        <div id="authStatus" class="status-muted">Not signed in</div>
+      </section>
+
+      <section class="section">
+        <h2>Local Dashboard Bridge (Dev)</h2>
+        <label>
+          Dashboard URL
+          <input id="localDashboardUrlInput" type="text" placeholder="http://localhost" />
+        </label>
+        <div class="row">
+          <button id="saveLocalDashboardBtn">Save Local URL</button>
+        </div>
+        <div id="localDashboardStatus" class="status-muted">Local dashboard URL not saved</div>
+      </section>
+
       <section class="section">
         <button id="captureBtn" class="primary">Capture Event</button>
       </section>
 
-      <!-- Section 3: Status Area -->
       <section class="section">
         <div id="status" class="status">Idle</div>
       </section>
 
-      <!-- Section 4: Event Form (shown only when detected) -->
       <section id="eventSection" class="section hidden">
         <h2>Detected Event</h2>
         <div class="form">
@@ -74,6 +99,10 @@
             Cost
             <input id="cost" type="text" />
           </label>
+          <label>
+            Source URL
+            <input id="source_url" type="text" placeholder="https://..." />
+          </label>
         </div>
         <div class="row">
           <button id="saveEventBtn">Save Event</button>
@@ -81,7 +110,6 @@
         </div>
       </section>
 
-      <!-- Section 5: Saved Events List -->
       <section class="section">
         <h2>Saved Events</h2>
         <div id="eventsList" class="list"></div>
