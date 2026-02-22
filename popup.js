@@ -149,6 +149,7 @@ async function onSaveEvent() {
     return;
   }
 
+  await loadRecentEventsFromSupabase({ silent: true });
   showToast("✓ Event saved and synced.");
   showScreen("idle");
 }
