@@ -94,15 +94,26 @@ Our demo follows a college student named Alex:
 ## Technical Stack
 
 - Chrome Extension (Manifest V3)
+- Chrome API
+- HTML
+- CSS
+- JavaScript
+- React.js
+- Next.js
 - OpenAI Responses API (Vision using gpt4o-mini)
-- Google Auth for user log-in
+- Google OAuth
 - Supabase for event storage
+- Supabase.js
 - Structured JSON extraction
 - Local event storage
 - ICS file export
 - Light/Dark mode UI 
 
 ---
+
+## Architecture Diagram
+
+![Architecture Diagram](architecture_diagram.svg)
 
 ## Ethics & Responsible Use
 
