@@ -148,15 +148,15 @@ We prioritize transparency, user agency, and responsible AI deployment.
 ## Links
 
 - Website: https://polysync.dev  
-- Demo Video: (https://drive.google.com/file/d/1xc23FR5QGmBhK-4OJII7eaFdJeAZHSUv/view?usp=sharing) 
+- Demo Video: https://drive.google.com/file/d/1xc23FR5QGmBhK-4OJII7eaFdJeAZHSUv/view?usp=sharing
 
 ---
 
 ## Team — Jason’s Jesters
 
-- **Tech Lead:** *(Name)*  
-- **Product Lead:** *(Name)*  
-- **Ethics Lead:** *(Name)*  
+- **Tech Lead:** *Curren Sebastian*  
+- **Product Lead:** *Omar Mohamed*  
+- **Ethics Lead:** *Kylie Chao*  
 
 Built for Poly Prompt Hackathon 2026.
 
